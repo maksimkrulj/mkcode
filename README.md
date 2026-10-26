@@ -24,6 +24,7 @@
   <a href="#quick-start">Quick start</a> ·
   <a href="#the-language">Language tour</a> ·
   <a href="#how-it-works">How it works</a> ·
+  <a href="docs/MK-Language-Paper.docx">📄 Paper</a> ·
   <a href="#roadmap">Roadmap</a>
 </p>
 
@@ -314,6 +315,18 @@ generated TypeScript of every example through `tsc --strict`, real HTTP requests
 `match` and `|>`) and starts `mk lsp`. That gives you errors as you type, hover with inferred types
 (including "this function performs I/O and was compiled as async"), go to definition, the document
 outline and completion.
+
+## The paper
+
+**[MK: A Reactive, Database-Native Language with Implicit Asynchrony and Compile-Time Ownership](docs/MK-Language-Paper.docx)**
+(30 pages, .docx) covers MK in depth. Its parts are:
+
+- **Section 2** teaches programming fundamentals through MK, for complete beginners.
+- **Section 3** presents each feature as a problem, the existing approaches and MK's solution.
+- **Section 4** explains the compiler's analyses: ownership as dataflow, asynchrony as a least fixed
+  point, and exhaustiveness checking.
+- **Sections 5–6** cover the evaluation and related work.
+- **Appendices** contain the full grammar, the diagnostic codes and the exercise solutions.
 
 ## Roadmap
 
