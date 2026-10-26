@@ -11,6 +11,11 @@ export interface Builtin {
   minArgs?: number;
   /** `undefined` means variadic. */
   maxArgs?: number;
+  /**
+   * Takes a function argument. If that function performs I/O the call is awaited and the
+   * runtime runs it concurrently (`map`, `filter`) or in order (`each`, `reduce`).
+   */
+  higherOrder?: boolean;
 }
 
 const fn = (
@@ -27,6 +32,11 @@ const fn = (
   type: { kind: "fn", params: [], returns },
   minArgs: args[0],
   maxArgs: args[1],
+});
+
+const hof = (name: string, returns: Type, args: [number, number]): Builtin => ({
+  ...fn(name, `$mk.${name}`, returns, args),
+  higherOrder: true,
 });
 
 const value = (name: string, emit = name): Builtin => ({
@@ -59,6 +69,23 @@ export const BUILTINS: ReadonlyMap<string, Builtin> = new Map(
     fn("readFile", "$mk.readFile", STRING, [1, 1], true),
     fn("writeFile", "$mk.writeFile", VOID, [2, 2], true),
     fn("join", "$mk.join", ANY, [1, undefined], true),
+    fn("request", "$mk.http.request", ANY, [2, 3], true),
+    fn("serve", "$mk.http.serve", VOID, [0, 1], true),
+    fn("mount", "$mk.mount", VOID, [1, 2]),
+    fn("renderToString", "$mk.renderToString", STRING, [1, 1]),
+    fn("Ok", "$mk.Ok", ANY, [0, 1]),
+    fn("Err", "$mk.Err", ANY, [1, 1]),
+    // Collections — usable with `|>`; async-aware when given a function that does I/O
+    hof("map", ANY, [2, 2]),
+    hof("filter", ANY, [2, 2]),
+    hof("reduce", ANY, [3, 3]),
+    hof("each", VOID, [2, 2]),
+    hof("find", ANY, [2, 2]),
+    hof("some", BOOL, [2, 2]),
+    hof("every", BOOL, [2, 2]),
+    hof("sortBy", ANY, [2, 2]),
+    fn("sum", "$mk.sum", ANY, [1, 1]),
+    fn("take", "$mk.take", ANY, [2, 2]),
     // Host globals
     value("Buffer"),
     value("Math"),

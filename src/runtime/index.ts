@@ -2,6 +2,12 @@
  * The MK runtime. Compiled programs import it as `$mk`; it has no dependencies.
  */
 export { Signal, Computed, signal, computed, effect, batch, untrack } from "./signals.js";
+export { Ok, Err, isResult, type Result } from "./result.js";
+export { map, filter, reduce, each, find, some, every, sortBy, sum, take } from "./collections.js";
+export { h, mount, renderToString, isMarkup, VNode, type Markup, type Child } from "./markup.js";
+export { live, LiveQuery } from "./live.js";
+export { test, testing, runTests, clearTests, assert, assertEqual, deepEqual, AssertionError } from "./testing.js";
+export * as http from "./http.js";
 export { q, isExpr, evaluate, type Expr, type Dialect, type CompiledSQL, type Row } from "./query.js";
 export {
   db,
@@ -10,6 +16,8 @@ export {
   MemoryAdapter,
   SqlAdapter,
   SqliteAdapter,
+  createTableSQL,
+  type MigrationPlan,
   selectSQL,
   countSQL,
   insertSQL,

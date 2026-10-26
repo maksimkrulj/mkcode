@@ -83,8 +83,56 @@ export interface FunctionDeclaration extends StatementBase {
   returnType?: TypeNode;
   body: BlockStatement;
   exported: boolean;
+  /** `view Name(...) { ... }`: a UI component whose last expression is its markup. */
+  isView?: boolean;
   /** Annotated by the analyzer: the function (transitively) performs I/O. */
   isAsync?: boolean;
+}
+
+export interface EnumField extends NodeBase {
+  name: string;
+  type: TypeNode;
+}
+
+export interface EnumVariant extends NodeBase {
+  name: string;
+  fields: EnumField[];
+}
+
+/** `enum Shape { Circle(radius: float), Empty }` — a tagged union. */
+export interface EnumDeclaration extends StatementBase {
+  kind: "EnumDeclaration";
+  name: string;
+  nameSpan: SourceSpan;
+  variants: EnumVariant[];
+  exported: boolean;
+}
+
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+/** `route GET "/todos/:id" (id: int) -> Todo? { ... }` — an HTTP endpoint. */
+export interface RouteDeclaration extends StatementBase {
+  kind: "RouteDeclaration";
+  method: HttpMethod;
+  path: string;
+  pathSpan: SourceSpan;
+  params: Parameter[];
+  returnType?: TypeNode;
+  body: BlockStatement;
+}
+
+/** `test "name" { ... }` — run by `mk test`, each with a fresh database. */
+export interface TestDeclaration extends StatementBase {
+  kind: "TestDeclaration";
+  name: string;
+  body: BlockStatement;
+}
+
+/** `assert expr` / `assert expr, "message"` */
+export interface AssertStatement extends StatementBase {
+  kind: "AssertStatement";
+  test: Expression;
+  message?: Expression;
 }
 
 export interface ModelField extends NodeBase {
@@ -186,6 +234,10 @@ export interface ExpressionStatement extends StatementBase {
 export type Statement =
   | ImportDeclaration
   | FunctionDeclaration
+  | EnumDeclaration
+  | RouteDeclaration
+  | TestDeclaration
+  | AssertStatement
   | ModelDeclaration
   | VariableDeclaration
   | SignalDeclaration
@@ -293,6 +345,8 @@ export interface CallExpression extends NodeBase {
   await?: boolean;
   /** Annotated by the analyzer: calling a capitalized host class (`Map()`, `Router()`) emits `new`. */
   construct?: boolean;
+  /** Written as `a |> f(b)`; stored as `f(a, b)`. */
+  piped?: boolean;
 }
 
 export interface MemberExpression extends NodeBase {
@@ -361,6 +415,10 @@ export interface QueryExpression extends NodeBase {
   limit?: Expression;
   offset?: Expression;
   select?: ColumnReference[];
+  /** `live query ...`: a signal that re-runs when its inputs or its table change. */
+  live?: boolean;
+  /** Annotated by the analyzer: wait for the first result (false inside views). */
+  liveAwait?: boolean;
 }
 
 /** `insert User { name: "Ana", score: 90 }` */
@@ -390,7 +448,68 @@ export interface DeleteExpression extends NodeBase {
   where?: Expression;
 }
 
+export type Pattern =
+  | { kind: "WildcardPattern"; span: SourceSpan }
+  | { kind: "LiteralPattern"; value: NumberLiteral | StringLiteral | BooleanLiteral | NullLiteral; span: SourceSpan }
+  | { kind: "BindingPattern"; name: string; span: SourceSpan }
+  | VariantPattern;
+
+export interface VariantPattern {
+  kind: "VariantPattern";
+  /** Variant name (`Circle`, `Ok`); a qualifier like `Shape.` is dropped. */
+  name: string;
+  /** One sub-pattern per field: `Err(Invalid(reason))`, `Rect(w, _)`. */
+  args: Pattern[];
+  span: SourceSpan;
+  /** Annotated by the analyzer: the field each argument matches, in order. */
+  fieldNames?: string[];
+}
+
+export interface MatchArm extends NodeBase {
+  pattern: Pattern;
+  guard?: Expression;
+  body: Expression | BlockStatement;
+}
+
+/** `match value { Circle(r) => ..., _ => ... }` */
+export interface MatchExpression extends NodeBase {
+  kind: "MatchExpression";
+  subject: Expression;
+  arms: MatchArm[];
+}
+
+/** `expr?` — unwraps `Ok(v)`, or returns the `Err` from the enclosing function. */
+export interface TryExpression extends NodeBase {
+  kind: "TryExpression";
+  operand: Expression;
+}
+
+export interface MarkupText extends NodeBase {
+  kind: "MarkupText";
+  value: string;
+}
+
+export interface MarkupAttribute extends NodeBase {
+  name: string;
+  value: StringLiteral | Expression | true;
+  /** Annotated by the analyzer for `on:` handlers that perform I/O. */
+  isAsync?: boolean;
+}
+
+/** `<button on:click={n += 1}>Clicked {n} times</button>` */
+export interface MarkupElement extends NodeBase {
+  kind: "MarkupElement";
+  tag: string;
+  attributes: MarkupAttribute[];
+  children: (MarkupText | MarkupElement | Expression)[];
+  /** Annotated by the analyzer: the tag is a `view` component. */
+  component?: boolean;
+}
+
 export type Expression =
+  | MatchExpression
+  | TryExpression
+  | MarkupElement
   | NumberLiteral
   | StringLiteral
   | TemplateLiteral

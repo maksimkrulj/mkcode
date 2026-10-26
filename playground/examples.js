@@ -30,6 +30,200 @@ fn main() {
 `,
   },
   {
+    id: "view",
+    title: "UI: Counter view (Preview tab)",
+    code: `// Views are components. {expressions} update in place when signals change.
+view Counter(start: int = 0) {
+    signal count = start
+    signal doubled = count * 2
+    <div class="card">
+        <h2>Clicked {count} times</h2>
+        <p>Doubled: {doubled}</p>
+        <button on:click={count += 1}>+1</button>
+        <button on:click={count = 0}>Reset</button>
+        {count >= 5 && <p>🔥 You're on fire!</p>}
+    </div>
+}
+
+view Greeter() {
+    signal name = "world"
+    <div class="card">
+        <input bind:value={name} />
+        <p>Hello, {name}!</p>
+    </div>
+}
+
+mount(<Counter start={0} />)
+mount(<Greeter />)
+`,
+  },
+  {
+    id: "live",
+    title: "Live query: data that updates itself",
+    code: `model Player {
+    id: int
+    name: string
+    score: int
+}
+
+signal minScore = 50
+// Re-runs when minScore changes or the Player table is written.
+signal leaders = live query Player where score >= minScore order by score desc
+
+effect {
+    print("🏆", leaders |> map(fn(p) => "\${p.name} (\${p.score})"))
+}
+
+fn main() {
+    insert Player { name: "Ana", score: 92 }
+    insert Player { name: "Marko", score: 40 }
+    insert Player { name: "Mila", score: 70 }
+    print("— lowering the bar —")
+    minScore = 30
+    print("— a new record —")
+    update Player set score = 99 where name == "Marko"
+}
+`,
+  },
+  {
+    id: "match",
+    title: "Enums, match & Result with ?",
+    code: `enum Shape {
+    Circle(radius: float)
+    Rect(w: float, h: float)
+    Empty
+}
+
+fn area(s: Shape) -> float {
+    // The compiler checks that every variant is handled.
+    return match s {
+        Circle(r) => 3.14159 * r * r
+        Rect(w, h) => w * h
+        Empty => 0.0
+    }
+}
+
+enum ParseError {
+    EmptyInput
+    NotANumber(text: string)
+}
+
+fn parseAge(text: string) -> Result<int, ParseError> {
+    if text == "" { return Err(EmptyInput) }
+    let n = int(text)
+    if n < 0 { return Err(NotANumber(text)) }
+    return Ok(n)
+}
+
+fn nextBirthday(text: string) -> Result<int, ParseError> {
+    let age = parseAge(text)?      // returns the Err early, unwraps Ok
+    return Ok(age + 1)
+}
+
+fn main() {
+    print([Circle(1.0), Rect(2.0, 3.0), Empty] |> map(area))
+    for input in ["41", "", "-3"] {
+        match nextBirthday(input) {
+            Ok(n) => print("next birthday:", n)
+            Err(EmptyInput) => print("please type something")
+            Err(NotANumber(t)) => print("not an age:", t)
+        }
+    }
+}
+`,
+  },
+  {
+    id: "api",
+    title: "REST API in 15 lines (routes)",
+    code: `model Todo { id: int, title: string, done: bool }
+
+route GET "/todos" -> List<Todo> {
+    return query Todo order by id
+}
+
+route POST "/todos" (title: string) -> Todo {
+    return insert Todo { title, done: false }
+}
+
+route PATCH "/todos/:todoId" (todoId: int, isDone: bool) -> int {
+    return update Todo set done = isDone where id == todoId
+}
+
+fn main() {
+    // request() calls your routes in-process; 'mk serve' exposes them over HTTP.
+    request("POST", "/todos", { title: "Write the compiler" })
+    request("POST", "/todos", { title: "Ship the playground" })
+    request("PATCH", "/todos/1", { isDone: true })
+    print(request("GET", "/todos").body)
+    print("bad id →", request("PATCH", "/todos/abc", { isDone: true }).body)
+    serve(3000)
+}
+`,
+  },
+  {
+    id: "pipes",
+    title: "Pipelines & concurrent map",
+    code: `fn fetchScore(name: string) -> int {
+    sleep(200)                  // pretend this is an HTTP call
+    return len(name) * 10
+}
+
+fn main() {
+    let started = now()
+    let names = ["ana", "marko", "jelena", "stefan"]
+    // fetchScore does I/O, so map runs all four calls concurrently.
+    let scores = names |> map(fetchScore)
+    print(scores, "in ~\${now() - started}ms (not 800ms)")
+
+    let total = scores
+        |> filter(fn(s) => s > 40)
+        |> sum
+    print("total of the big scores:", total)
+}
+`,
+  },
+  {
+    id: "tests",
+    title: "Tests (press ✓ Test)",
+    code: `fn fizzbuzz(n: int) -> string {
+    if n % 15 == 0 { return "FizzBuzz" }
+    if n % 3 == 0 { return "Fizz" }
+    if n % 5 == 0 { return "Buzz" }
+    return str(n)
+}
+
+model Account { id: int, owner: string, balance: int }
+
+fn deposit(accountId: int, amount: int) -> Result<int, string> {
+    if amount <= 0 { return Err("amount must be positive") }
+    let changed = update Account set balance = balance + amount where id == accountId
+    if changed == 0 { return Err("no such account") }
+    return Ok(changed)
+}
+
+test "fizzbuzz" {
+    assert fizzbuzz(9) == "Fizz"
+    assert fizzbuzz(10) == "Buzz"
+    assert fizzbuzz(30) == "FizzBuzz"
+}
+
+test "deposit adds money" {
+    insert Account { owner: "Ana", balance: 100 }
+    assert deposit(1, 50) == Ok(1)
+    let account = query first Account
+    assert account?.balance == 150
+}
+
+test "deposit rejects negative amounts" {
+    assert deposit(1, -5) == Err("amount must be positive")
+}
+
+fn main() {
+    print("Press ✓ Test to run the test blocks")
+}
+`,
+  },
+  {
     id: "signals",
     title: "Reactive signals & effects",
     code: `signal celsius = 20

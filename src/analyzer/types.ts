@@ -17,7 +17,10 @@ export type Type =
   | { kind: "task"; inner: Type }
   | { kind: "fn"; params: Type[]; returns: Type }
   | { kind: "model"; name: string }
-  | { kind: "named"; name: string; args: Type[] };
+  | { kind: "named"; name: string; args: Type[] }
+  | { kind: "enum"; name: string }
+  | { kind: "result"; ok: Type; err: Type }
+  | { kind: "markup" };
 
 export const INT: Type = { kind: "int" };
 export const FLOAT: Type = { kind: "float" };
@@ -26,6 +29,7 @@ export const BOOL: Type = { kind: "bool" };
 export const VOID: Type = { kind: "void" };
 export const NULL: Type = { kind: "null" };
 export const ANY: Type = { kind: "any" };
+export const MARKUP: Type = { kind: "markup" };
 
 export const list = (element: Type): Type => ({ kind: "list", element });
 export const optional = (inner: Type): Type =>
@@ -53,7 +57,12 @@ export function typeToString(t: Type): string {
     case "fn":
       return `fn(${t.params.map(typeToString).join(", ")}) -> ${typeToString(t.returns)}`;
     case "model":
+    case "enum":
       return t.name;
+    case "result":
+      return `Result<${typeToString(t.ok)}, ${typeToString(t.err)}>`;
+    case "markup":
+      return "Markup";
     case "named":
       return t.args.length ? `${t.name}<${t.args.map(typeToString).join(", ")}>` : t.name;
     default:
@@ -84,6 +93,10 @@ export function isAssignable(from: Type, to: Type): boolean {
       return to.kind === "fn";
     case "model":
       return to.kind === "model" && to.name === from.name;
+    case "enum":
+      return to.kind === "enum" && to.name === from.name;
+    case "result":
+      return to.kind === "result" && isAssignable(from.ok, to.ok) && isAssignable(from.err, to.err);
     case "optional":
       return false;
     default:
@@ -100,4 +113,11 @@ export function isComparable(a: Type, b: Type): boolean {
   if (isUnknown(x) || isUnknown(y)) return true;
   if (isNumeric(x) && isNumeric(y)) return true;
   return isAssignable(x, y) || isAssignable(y, x);
+}
+
+/** Runtime column / parameter descriptor for a type: `int`, `float`, `string`, `bool` or `json`, plus `?`. */
+export function columnTypeOf(t: Type): string {
+  if (t.kind === "optional") return `${columnTypeOf(t.inner)}?`;
+  if (t.kind === "int" || t.kind === "float" || t.kind === "string" || t.kind === "bool") return t.kind;
+  return "json";
 }

@@ -26,6 +26,7 @@ const output = $("output");
 const status = $("status");
 const diagnosticsList = $("diagnostics");
 const examples = $("examples");
+const preview = $("preview");
 
 let tab = "ts";
 let last = { ts: "", js: "", ast: "", ok: false };
@@ -35,7 +36,7 @@ const consoleLines = [];
 // Syntax highlighting with MK's own lexer
 // ---------------------------------------------------------------------------
 
-const KEYWORDS = new Set(["fn", "let", "var", "signal", "effect", "consume", "spawn", "import", "export", "return", "if", "else", "while", "for", "in", "break", "continue"]);
+const KEYWORDS = new Set(["fn", "let", "var", "signal", "effect", "consume", "spawn", "import", "export", "return", "if", "else", "while", "for", "in", "break", "continue", "enum", "match", "assert"]);
 const QUERY = new Set(["query", "where"]);
 const CONSTANTS = new Set(["true", "false", "null"]);
 const TYPES = new Set(["int", "float", "string", "bool", "void", "any", "List", "Map", "Task"]);
@@ -47,11 +48,15 @@ function tokenClass(t, prev, next) {
   if (CONSTANTS.has(t.type)) return "t-const";
   if (t.type === "String" || t.type === "Template") return "t-string";
   if (t.type === "Int" || t.type === "Float") return "t-number";
+  if (t.type === "Markup") return "t-markup";
+  if (t.type === "|>") return "t-keyword";
   if (t.type !== "Identifier") return "";
   const w = t.lexeme;
   const nextIsName = next?.type === "Identifier";
   if ((w === "first" || w === "count") && prev?.type === "query") return "t-query";
   if ((w === "insert" || w === "update" || w === "delete" || w === "model") && nextIsName) return "t-query";
+  if (w === "live" && next?.type === "query") return "t-query";
+  if ((w === "view" && nextIsName) || (w === "route" && nextIsName) || (w === "test" && next?.type === "String")) return "t-keyword";
   if ((w === "order" && next?.lexeme === "by") || (w === "by" && prev?.lexeme === "order")) return "t-query";
   if (["asc", "desc", "limit", "offset", "select", "set"].includes(w)) return "t-query";
   if ((w === "from" || w === "as") && prev?.type !== "Dot") return "t-keyword";
@@ -120,8 +125,8 @@ function compileNow() {
   const started = performance.now();
   let diagnostics = [];
   try {
-    const ts = compile(src, { file: "main.mk", target: "ts", runtimeImport: "mk-lang/runtime" });
-    const js = compile(src, { file: "main.mk", target: "js", runtimeImport: "mk-lang/runtime" });
+    const ts = compile(src, { file: "main.mk", target: "ts", runtimeImport: "mkcode/runtime" });
+    const js = compile(src, { file: "main.mk", target: "js", runtimeImport: "mkcode/runtime" });
     diagnostics = ts.warnings;
     last = { ts: ts.code, js: js.code, ast: astJson(src), ok: true };
   } catch (e) {
@@ -164,10 +169,15 @@ function renderDiagnostics(diagnostics) {
 }
 
 function renderOutput() {
+  output.hidden = tab === "preview";
+  preview.hidden = tab !== "preview";
   output.classList.toggle("stale", !last.ok && (tab === "ts" || tab === "js"));
   if (tab === "ts") output.innerHTML = renderTS(last.ts);
   else if (tab === "js") output.innerHTML = renderTS(last.js);
   else if (tab === "ast") output.textContent = last.ast;
+  else if (tab === "preview") {
+    if (!preview.childNodes.length) preview.innerHTML = `<p style="color:#8a93a8">Views you <code>mount(...)</code> appear here. Try the “Counter view” example.</p>`;
+  }
   else output.innerHTML = consoleLines.join("\n") || `<span class="log-meta">Press ▶ Run (Ctrl+Enter) to execute the program.</span>`;
 }
 
@@ -195,7 +205,7 @@ for (const level of ["log", "info", "warn", "error"]) {
 /** A compact take on Node's util.inspect, so output looks like `mk run`. */
 function inspect(value, depth = 0) {
   if (value === null || value === undefined || typeof value === "boolean" || typeof value === "number") return String(value);
-  if (typeof value === "string") return depth === 0 ? value : `'${value.replace(/'/g, "\\'")}'`;
+  if (typeof value === "string") return depth === 0 ? value : value.includes("'") ? JSON.stringify(value) : `'${value}'`;
   if (typeof value === "function") return `[Function ${value.name || "anonymous"}]`;
   if (value instanceof Error) return value.stack ?? String(value);
   if (value instanceof Uint8Array) return `<Buffer ${value.length} bytes>`;
@@ -211,10 +221,15 @@ function inspect(value, depth = 0) {
 }
 
 let running = false;
-async function run() {
+async function run(mode = "run") {
   if (running) return;
   running = true;
   consoleLines.length = 0;
+  preview.replaceChildren();
+  globalThis.MK_MOUNT_TARGET = preview;
+  globalThis.MK_TEST = mode === "test";
+  runtime.clearTests();
+  runtime.http.reset();
   selectTab("console");
   let js;
   try {
@@ -235,6 +250,7 @@ async function run() {
   try {
     await import(url);
     consoleLines.push(`<span class="log-meta">— finished in ${(performance.now() - started).toFixed(0)} ms</span>`);
+    if (preview.childNodes.length) selectTab("preview");
   } catch (e) {
     consoleLines.push(`<span class="log-error">${escapeHtml(e?.stack ?? String(e))}</span>`);
   } finally {
@@ -315,7 +331,8 @@ editor.addEventListener("keydown", (e) => {
 });
 
 for (const b of document.querySelectorAll("[data-tab]")) b.addEventListener("click", () => selectTab(b.dataset.tab));
-$("run").addEventListener("click", run);
+$("run").addEventListener("click", () => run());
+$("test").addEventListener("click", () => run("test"));
 $("share").addEventListener("click", share);
 
 for (const ex of EXAMPLES) examples.append(new Option(ex.title, ex.id));

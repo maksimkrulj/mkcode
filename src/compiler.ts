@@ -23,7 +23,7 @@ export interface CompileOutput {
   warnings: Diagnostic[];
 }
 
-export const DEFAULT_RUNTIME_IMPORT = "mk-lang/runtime";
+export const DEFAULT_RUNTIME_IMPORT = "mkcode/runtime";
 
 /** Lex + parse. Throws `CompileError` on syntax errors. */
 export function parseSource(source: string, file = "<input>"): Program {
@@ -55,6 +55,7 @@ export function compileProgram(program: Program, source: string, options: Compil
     rewriteImport: options.rewriteImport,
     entry: options.entry ?? true,
     sourceName: options.file ?? "<input>",
+    source,
   });
   return { code, program, analysis, warnings: analysis.diagnostics.items.filter((d) => d.severity === "warning") };
 }

@@ -6,6 +6,8 @@ export enum TokenType {
   Float = "Float",
   String = "String",
   Template = "Template",
+  /** A whole `<tag ...>...</tag>` element; its value is a {@link MarkupTag}. */
+  Markup = "Markup",
 
   // Hard keywords
   Fn = "fn",
@@ -30,6 +32,9 @@ export enum TokenType {
   True = "true",
   False = "false",
   Null = "null",
+  Enum = "enum",
+  Match = "match",
+  Assert = "assert",
 
   // Punctuation
   LeftParen = "(",
@@ -65,6 +70,7 @@ export enum TokenType {
   AndAnd = "&&",
   OrOr = "||",
   QuestionQuestion = "??",
+  Pipe = "|>",
   PlusEqual = "+=",
   MinusEqual = "-=",
   StarEqual = "*=",
@@ -98,6 +104,9 @@ export const KEYWORDS: ReadonlyMap<string, TokenType> = new Map([
   ["true", TokenType.True],
   ["false", TokenType.False],
   ["null", TokenType.Null],
+  ["enum", TokenType.Enum],
+  ["match", TokenType.Match],
+  ["assert", TokenType.Assert],
 ]);
 
 /**
@@ -106,7 +115,7 @@ export const KEYWORDS: ReadonlyMap<string, TokenType> = new Map([
  */
 export const CONTEXTUAL_KEYWORDS = [
   "model", "from", "as", "order", "by", "asc", "desc", "limit", "offset", "select",
-  "first", "count", "insert", "update", "delete", "set",
+  "first", "count", "insert", "update", "delete", "set", "live", "route", "test", "view",
 ] as const;
 
 export interface SourcePosition {
@@ -128,12 +137,36 @@ export type TemplatePart =
   | { kind: "text"; value: string }
   | { kind: "expr"; source: string; start: SourcePosition };
 
+/** An embedded `{expression}` inside markup, sub-parsed later like a template interpolation. */
+export interface MarkupHole {
+  kind: "expr";
+  source: string;
+  start: SourcePosition;
+}
+
+export interface MarkupAttribute {
+  name: string;
+  /** `true` for a bare attribute (`<input disabled>`). */
+  value: string | MarkupHole | true;
+  span: SourceSpan;
+}
+
+export type MarkupChild = { kind: "text"; value: string } | MarkupHole | MarkupTag;
+
+export interface MarkupTag {
+  kind: "element";
+  tag: string;
+  attributes: MarkupAttribute[];
+  children: MarkupChild[];
+  span: SourceSpan;
+}
+
 export interface Token {
   type: TokenType;
   /** Exact source text of the token. */
   lexeme: string;
-  /** Decoded value for literals (number, unescaped string, template parts). */
-  value?: number | string | TemplatePart[];
+  /** Decoded value for literals (number, unescaped string, template parts, markup tree). */
+  value?: number | string | TemplatePart[] | MarkupTag;
   span: SourceSpan;
 }
 

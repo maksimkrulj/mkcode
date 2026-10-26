@@ -29,6 +29,8 @@ export class DiagnosticBag {
   readonly items: Diagnostic[] = [];
 
   error(code: string, message: string, span: SourceSpan, notes?: Diagnostic["notes"]): void {
+    const last = this.items[this.items.length - 1];
+    if (last && last.message === message && last.span.start.offset === span.start.offset) return;
     this.items.push({ severity: "error", code, message, span, notes });
   }
 

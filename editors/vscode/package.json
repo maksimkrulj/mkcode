@@ -1,8 +1,8 @@
 {
   "name": "mk-lang",
   "displayName": "MK Language",
-  "description": "Syntax highlighting for MK — the reactive, database-native language that compiles to TypeScript",
-  "version": "0.1.0",
+  "description": "MK support: syntax highlighting plus a language server with live errors, hover types, go to definition and completion",
+  "version": "0.2.0",
   "publisher": "maksimkrulj",
   "license": "MIT",
   "repository": {
@@ -14,8 +14,16 @@
     "vscode": "^1.80.0"
   },
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Linters"
   ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:mk"
+  ],
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
   "contributes": {
     "languages": [
       {
@@ -34,6 +42,16 @@
           "meta.embedded.interpolation.mk": "mk"
         }
       }
-    ]
+    ],
+    "configuration": {
+      "title": "MK",
+      "properties": {
+        "mk.serverPath": {
+          "type": "string",
+          "default": "mk",
+          "description": "Command that starts the MK compiler; the extension runs '<serverPath> lsp'."
+        }
+      }
+    }
   }
 }

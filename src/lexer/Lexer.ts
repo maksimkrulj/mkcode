@@ -3,6 +3,10 @@ import {
   KEYWORDS,
   TokenType,
   type Comment,
+  type MarkupAttribute,
+  type MarkupChild,
+  type MarkupHole,
+  type MarkupTag,
   type SourcePosition,
   type TemplatePart,
   type Token,
@@ -19,6 +23,7 @@ const OPERATORS: [string, TokenType][] = (
   [
     ["?.", TokenType.QuestionDot],
     ["??", TokenType.QuestionQuestion],
+    ["|>", TokenType.Pipe],
     ["->", TokenType.Arrow],
     ["=>", TokenType.FatArrow],
     ["..", TokenType.DotDot],
@@ -123,6 +128,7 @@ export class Lexer {
     if (isDigit(c)) return this.number();
     if (isIdentStart(c)) return this.identifier();
     if (c === '"') return this.string();
+    if (c === "<" && isIdentStart(this.peek(1)) && this.markupAllowed()) return this.markup();
 
     for (const [text, type] of OPERATORS) {
       if (this.source.startsWith(text, this.pos)) {
@@ -321,6 +327,146 @@ export class Lexer {
     return { kind: "expr", source, start };
   }
 
+  // -------------------------------------------------------------------------
+  // Markup: `<div class="x">Hello {name}</div>`
+  // -------------------------------------------------------------------------
+
+  /**
+   * `<` starts markup only where an expression may begin (like the regex-vs-division rule in
+   * JavaScript): after `=`, `(`, `,`, `return`, `=>`, a newline, ... — never after a value, so
+   * `a < b` and `List<int>` are unaffected.
+   */
+  private markupAllowed(): boolean {
+    const last = this.tokens[this.tokens.length - 1];
+    if (!last) return true;
+    return MARKUP_PRECEDERS.has(last.type);
+  }
+
+  private markup(): void {
+    const start = this.position();
+    const tree = this.markupElement();
+    const lexeme = this.source.slice(start.offset - this.origin.offset, this.pos);
+    if (tree) this.push(TokenType.Markup, lexeme, start, tree);
+  }
+
+  private markupElement(): MarkupTag | undefined {
+    const start = this.position();
+    this.advance(); // <
+    const tag = this.readWhile((c) => isIdentPart(c) || c === "-" || c === "." || c === ":");
+    const attributes: MarkupAttribute[] = [];
+    const fail = (message: string) => {
+      this.diagnostics.error("MK1010", message, { start, end: this.position() });
+      return undefined;
+    };
+
+    for (;;) {
+      this.skipMarkupSpace();
+      if (this.atEnd()) return fail(`unterminated tag <${tag}>`);
+      if (this.peek() === "/" && this.peek(1) === ">") {
+        this.advance();
+        this.advance();
+        return { kind: "element", tag, attributes, children: [], span: { start, end: this.position() } };
+      }
+      if (this.peek() === ">") {
+        this.advance();
+        break;
+      }
+      const attrStart = this.position();
+      const name = this.readWhile((c) => isIdentPart(c) || c === "-" || c === ":");
+      if (!name) {
+        this.advance();
+        return fail(`unexpected character in tag <${tag}>`);
+      }
+      this.skipMarkupSpace();
+      let value: MarkupAttribute["value"] = true;
+      if (this.peek() === "=") {
+        this.advance();
+        this.skipMarkupSpace();
+        if (this.peek() === '"') {
+          this.advance();
+          value = decodeEntities(this.readWhile((c) => c !== '"'));
+          if (this.atEnd()) return fail(`unterminated attribute value in <${tag}>`);
+          this.advance();
+        } else if (this.peek() === "{") {
+          const hole = this.markupHole();
+          if (!hole) return undefined;
+          value = hole;
+        } else {
+          return fail(`attribute '${name}' needs a "string" or {expression} value`);
+        }
+      }
+      attributes.push({ name, value, span: { start: attrStart, end: this.position() } });
+    }
+
+    const children: MarkupChild[] = [];
+    for (;;) {
+      if (this.atEnd()) return fail(`<${tag}> is never closed; add </${tag}>`);
+      if (this.peek() === "<" && this.peek(1) === "/") {
+        this.advance();
+        this.advance();
+        const closing = this.readWhile((c) => isIdentPart(c) || c === "-" || c === "." || c === ":");
+        this.skipMarkupSpace();
+        if (this.peek() !== ">") return fail(`expected '>' after </${closing}`);
+        this.advance();
+        if (closing !== tag) return fail(`</${closing}> does not match <${tag}>`);
+        break;
+      }
+      if (this.peek() === "<" && isIdentStart(this.peek(1))) {
+        const child = this.markupElement();
+        if (!child) return undefined;
+        children.push(child);
+      } else if (this.peek() === "{") {
+        const hole = this.markupHole();
+        if (!hole) return undefined;
+        children.push(hole);
+      } else {
+        const text = normalizeMarkupText(this.readWhile((c) => c !== "<" && c !== "{"));
+        if (text) children.push({ kind: "text", value: decodeEntities(text) });
+      }
+    }
+    return { kind: "element", tag, attributes, children, span: { start, end: this.position() } };
+  }
+
+  /** `{ ... }` inside markup — balanced braces, may span lines, may contain nested markup. */
+  private markupHole(): MarkupHole | undefined {
+    const open = this.position();
+    this.advance(); // {
+    const start = this.position();
+    let depth = 1;
+    while (!this.atEnd()) {
+      const c = this.peek();
+      if (c === '"') {
+        this.advance();
+        while (!this.atEnd() && this.peek() !== '"') {
+          if (this.peek() === "\\") this.advance();
+          this.advance();
+        }
+        if (!this.atEnd()) this.advance();
+        continue;
+      }
+      if (c === "{") depth++;
+      if (c === "}" && --depth === 0) break;
+      this.advance();
+    }
+    if (depth !== 0) {
+      this.diagnostics.error("MK1011", "unterminated '{' in markup", { start: open, end: this.position() });
+      return undefined;
+    }
+    const source = this.source.slice(start.offset - this.origin.offset, this.pos);
+    this.advance(); // }
+    return { kind: "expr", source, start };
+  }
+
+  private skipMarkupSpace(): void {
+    while (!this.atEnd() && /\s/.test(this.peek())) this.advance();
+  }
+
+  private readWhile(test: (c: string) => boolean): string {
+    const from = this.pos;
+    while (!this.atEnd() && test(this.peek())) this.advance();
+    return this.source.slice(from, this.pos);
+  }
+
   private push(type: TokenType, lexeme: string, start: SourcePosition, value?: Token["value"]): void {
     this.tokens.push({ type, lexeme, value, span: { start, end: this.position() } });
   }
@@ -347,6 +493,28 @@ export class Lexer {
   private atEnd(): boolean {
     return this.pos >= this.source.length;
   }
+}
+
+const MARKUP_PRECEDERS = new Set<TokenType>([
+  TokenType.Newline, TokenType.LeftParen, TokenType.LeftBracket, TokenType.LeftBrace, TokenType.Comma,
+  TokenType.Equal, TokenType.FatArrow, TokenType.Return, TokenType.Colon, TokenType.AndAnd,
+  TokenType.OrOr, TokenType.QuestionQuestion, TokenType.Semicolon, TokenType.Pipe,
+]);
+
+const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+
+function decodeEntities(text: string): string {
+  return text.replace(/&(amp|lt|gt|quot|apos|nbsp);/g, (_, name: string) => ENTITIES[name]!);
+}
+
+/** JSX whitespace rules: text spanning lines is trimmed per line and joined with single spaces. */
+function normalizeMarkupText(text: string): string {
+  if (!text.includes("\n")) return text;
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(" ");
 }
 
 function isDigit(c: string): boolean {

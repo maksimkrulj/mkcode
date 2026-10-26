@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ModuleInterface } from "../analyzer/Analyzer.js";
+import { columnTypeOf } from "../analyzer/types.js";
 import { compileProgram, importSpecifiers, parseSource } from "../compiler.js";
 import { formatDiagnostics } from "../diagnostics.js";
 import { UrlCache } from "./UrlCache.js";
@@ -42,6 +43,10 @@ export const BUNDLED_RUNTIME = new URL("../runtime/index.js", import.meta.url).h
 export class ProjectBuilder {
   /** Formatted warnings from every compiled module. */
   readonly warnings: string[] = [];
+  /** Column descriptors of every declared model in the graph (for `mk db migrate`). */
+  readonly models = new Map<string, Record<string, string>>();
+  /** Every local source file in the graph (for `mk serve --watch`). */
+  readonly files = new Set<string>();
   private readonly built = new Map<string, BuiltModule>();
   private readonly stack: string[] = [];
 
@@ -95,6 +100,11 @@ export class ProjectBuilder {
         resolveModule: (s) => deps.get(s)?.interface,
       });
       if (output.warnings.length) this.warnings.push(formatDiagnostics(output.warnings, source, file));
+      if (!remote) this.files.add(id);
+      for (const model of output.analysis.models.values()) {
+        if (model.origin !== "declared" || !model.fields) continue;
+        this.models.set(model.name, Object.fromEntries([...model.fields].map(([name, type]) => [name, columnTypeOf(type)])));
+      }
 
       await mkdir(path.dirname(outFile), { recursive: true });
       await writeFile(outFile, output.code);

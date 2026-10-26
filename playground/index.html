@@ -24,6 +24,7 @@
         <input type="checkbox" id="seed" checked> demo DB
       </label>
       <button id="share" type="button">Share</button>
+      <button id="test" type="button" title="Run the test blocks">✓ Test</button>
       <button id="run" type="button" class="primary">▶ Run <kbd>Ctrl ⏎</kbd></button>
       <a class="star" href="https://github.com/maksimkrulj/mkcode">★ Star</a>
     </div>
@@ -45,9 +46,11 @@
         <button role="tab" data-tab="ts" aria-selected="true">TypeScript</button>
         <button role="tab" data-tab="js">JavaScript</button>
         <button role="tab" data-tab="console">Console</button>
+        <button role="tab" data-tab="preview">Preview</button>
         <button role="tab" data-tab="ast">AST</button>
       </div>
       <pre id="output" class="code output" tabindex="0"></pre>
+      <div id="preview" class="preview" hidden></div>
     </section>
   </main>
 

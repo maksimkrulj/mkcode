@@ -23,3 +23,17 @@ VS Code's built-in Makefile support also claims `.mk`. To make MK the default, a
 ```json
 "files.associations": { "*.mk": "mk" }
 ```
+
+## Language server
+
+The extension starts `mk lsp`, which gives you:
+
+- errors and warnings as you type
+- hover with inferred types, including whether a function performs I/O and becomes `async`
+- go to definition
+- the document outline
+- completion
+
+It needs the `mk` command on your PATH (run `npm link` in the mkcode repo), or set
+`"mk.serverPath"` to the full path of `bin/mk.js`. Run `npm install` in this folder before
+packaging, so that `vscode-languageclient` is included.

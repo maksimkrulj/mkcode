@@ -1,7 +1,7 @@
 import type * as AST from "../ast/nodes.js";
 import { DiagnosticBag } from "../diagnostics.js";
 import { Lexer } from "../lexer/Lexer.js";
-import { TokenType, type Comment, type SourceSpan, type TemplatePart, type Token } from "../lexer/Token.js";
+import { TokenType, type Comment, type MarkupTag, type SourceSpan, type TemplatePart, type Token } from "../lexer/Token.js";
 
 export interface ParseResult {
   program: AST.Program;
@@ -16,7 +16,7 @@ const MAX_ERRORS = 50;
 const STATEMENT_KEYWORDS = new Set<TokenType>([
   TokenType.Fn, TokenType.Let, TokenType.Var, TokenType.Signal, TokenType.Effect,
   TokenType.Import, TokenType.Export, TokenType.Return, TokenType.If, TokenType.While,
-  TokenType.For, TokenType.Break, TokenType.Continue,
+  TokenType.For, TokenType.Break, TokenType.Continue, TokenType.Enum, TokenType.Assert,
 ]);
 
 const ASSIGNMENT_OPERATORS = new Map<TokenType, AST.AssignmentOperator>([
@@ -94,7 +94,10 @@ export class Parser {
       return stmt;
     } catch (e) {
       if (!(e instanceof ParseFailure)) throw e;
+      const at = this.current;
       this.synchronize();
+      // A stray '}' at the top level would otherwise be retried forever.
+      if (this.current === at && topLevel) this.advance();
       return undefined;
     }
   }
@@ -134,8 +137,21 @@ export class Parser {
         return { kind: "ContinueStatement", span: token.span };
       case TokenType.LeftBrace:
         return this.block();
+      case TokenType.Enum:
+        return this.enumDeclaration(false);
+      case TokenType.Assert:
+        return this.assertStatement();
       case TokenType.Identifier:
         if (this.isModelDeclarationStart()) return this.modelDeclaration(false);
+        if (this.isViewStart()) return this.viewDeclaration(false);
+        if (this.checkContextual("route") && this.peek(1).type === TokenType.Identifier && this.peek(2).type === TokenType.String) {
+          if (!topLevel) this.fail(token, "MK2013", "routes must be declared at the top level of a module");
+          return this.routeDeclaration();
+        }
+        if (this.checkContextual("test") && this.peek(1).type === TokenType.String && this.peek(2).type === TokenType.LeftBrace) {
+          if (!topLevel) this.fail(token, "MK2013", "tests must be declared at the top level of a module");
+          return this.testDeclaration();
+        }
         break;
     }
     const expression = this.expression();
@@ -149,7 +165,7 @@ export class Parser {
       return;
     }
     if (this.check(TokenType.RightBrace) || this.check(TokenType.EOF)) return;
-    if (this.previous().type === TokenType.RightBrace && endsWithBlock(stmt)) return;
+    if (this.previous().type === TokenType.RightBrace || endsWithBlock(stmt)) return;
     this.fail(this.peek(), "MK2001", `expected a newline or ';' after statement, found ${describe(this.peek())}`);
   }
 
@@ -220,12 +236,19 @@ export class Parser {
       case TokenType.Signal:
         decl = this.signalDeclaration(true);
         break;
+      case TokenType.Enum:
+        decl = this.enumDeclaration(true);
+        break;
       default:
         if (this.isModelDeclarationStart()) {
           decl = this.modelDeclaration(true);
           break;
         }
-        this.fail(this.peek(), "MK2012", "expected 'fn', 'let', 'var', 'signal' or 'model' after 'export'");
+        if (this.isViewStart()) {
+          decl = this.viewDeclaration(true);
+          break;
+        }
+        this.fail(this.peek(), "MK2012", "expected 'fn', 'let', 'var', 'signal', 'model', 'enum' or 'view' after 'export'");
     }
     decl.span = { start: start.span.start, end: decl.span.end };
     return decl;
@@ -293,6 +316,97 @@ export class Parser {
     }
     this.expect(TokenType.RightBrace, "expected '}' to close the model");
     return { kind: "ModelDeclaration", name: name.lexeme, nameSpan: name.span, fields, exported, span: this.spanFrom(start) };
+  }
+
+  private enumDeclaration(exported: boolean): AST.EnumDeclaration {
+    const start = this.advance(); // enum
+    const name = this.expect(TokenType.Identifier, "expected an enum name");
+    this.expect(TokenType.LeftBrace, "expected '{' after the enum name");
+    const variants: AST.EnumVariant[] = [];
+    this.skipNewlines();
+    while (!this.check(TokenType.RightBrace) && !this.check(TokenType.EOF)) {
+      const variant = this.expect(TokenType.Identifier, "expected a variant name");
+      const fields: AST.EnumField[] = [];
+      if (this.match(TokenType.LeftParen)) {
+        while (!this.check(TokenType.RightParen)) {
+          const field = this.expectName("expected a field name");
+          this.expect(TokenType.Colon, `expected ':' after field '${field.lexeme}'`);
+          const type = this.type();
+          fields.push({ name: field.lexeme, type, span: this.spanFrom(field) });
+          if (!this.match(TokenType.Comma)) break;
+        }
+        this.expect(TokenType.RightParen, "expected ')' after the variant fields");
+      }
+      variants.push({ name: variant.lexeme, fields, span: this.spanFrom(variant) });
+      this.match(TokenType.Comma);
+      this.skipNewlines();
+    }
+    this.expect(TokenType.RightBrace, "expected '}' to close the enum");
+    return { kind: "EnumDeclaration", name: name.lexeme, nameSpan: name.span, variants, exported, span: this.spanFrom(start) };
+  }
+
+  private isViewStart(): boolean {
+    return (
+      this.checkContextual("view") &&
+      this.peek(1).type === TokenType.Identifier &&
+      (this.peek(2).type === TokenType.LeftParen || this.peek(2).type === TokenType.LeftBrace)
+    );
+  }
+
+  /** `view Counter(start: int = 0) { ... <markup/> }` */
+  private viewDeclaration(exported: boolean): AST.FunctionDeclaration {
+    const start = this.advance(); // view
+    const name = this.expect(TokenType.Identifier, "expected a view name");
+    const params = this.check(TokenType.LeftParen) ? this.parameterList(true) : [];
+    const body = this.block();
+    return {
+      kind: "FunctionDeclaration",
+      name: name.lexeme,
+      nameSpan: name.span,
+      params,
+      returnType: { kind: "TypeReference", name: "Markup", args: [], optional: false, span: name.span },
+      body,
+      exported,
+      isView: true,
+      span: this.spanFrom(start),
+    };
+  }
+
+  private routeDeclaration(): AST.RouteDeclaration {
+    const start = this.advance(); // route
+    const method = this.advance();
+    if (!["GET", "POST", "PUT", "PATCH", "DELETE"].includes(method.lexeme)) {
+      this.fail(method, "MK2014", `unknown HTTP method '${method.lexeme}'; use GET, POST, PUT, PATCH or DELETE`);
+    }
+    const path = this.expect(TokenType.String, "expected a path string");
+    if (!(path.value as string).startsWith("/")) this.error(path.span, "MK2015", "route paths must start with '/'");
+    const params = this.check(TokenType.LeftParen) ? this.parameterList(true) : [];
+    const returnType = this.match(TokenType.Arrow) ? this.type() : undefined;
+    const body = this.block();
+    return {
+      kind: "RouteDeclaration",
+      method: method.lexeme as AST.HttpMethod,
+      path: path.value as string,
+      pathSpan: path.span,
+      params,
+      returnType,
+      body,
+      span: this.spanFrom(start),
+    };
+  }
+
+  private testDeclaration(): AST.TestDeclaration {
+    const start = this.advance(); // test
+    const name = this.advance();
+    const body = this.block();
+    return { kind: "TestDeclaration", name: name.value as string, body, span: this.spanFrom(start) };
+  }
+
+  private assertStatement(): AST.AssertStatement {
+    const start = this.advance(); // assert
+    const test = this.expression();
+    const message = this.match(TokenType.Comma) ? this.expression() : undefined;
+    return { kind: "AssertStatement", test, message, span: this.spanFrom(start) };
   }
 
   private variableDeclaration(exported: boolean): AST.VariableDeclaration {
@@ -407,7 +521,7 @@ export class Parser {
   }
 
   private assignment(): AST.Expression {
-    const target = this.nullish();
+    const target = this.pipe();
     const operator = ASSIGNMENT_OPERATORS.get(this.peek().type);
     if (!operator) return target;
     const opToken = this.advance();
@@ -423,6 +537,25 @@ export class Parser {
       value,
       span: this.join(target.span, value.span),
     };
+  }
+
+  /** `a |> f(b)` → `f(a, b)`; `a |> f` → `f(a)`. May continue on the next line. */
+  private pipe(): AST.Expression {
+    let left = this.nullish();
+    for (;;) {
+      if (this.check(TokenType.Newline) && this.peekPastNewlines().type === TokenType.Pipe) this.skipNewlines();
+      if (!this.match(TokenType.Pipe)) return left;
+      this.skipNewlines();
+      const right = this.nullish();
+      const span = this.join(left.span, right.span);
+      if (right.kind === "CallExpression") {
+        left = { ...right, args: [left, ...right.args], piped: true, span };
+      } else if (right.kind === "Identifier" || right.kind === "MemberExpression") {
+        left = { kind: "CallExpression", callee: right, args: [left], piped: true, span };
+      } else {
+        this.fail(this.previous(), "MK2060", "the right side of '|>' must be a function or a call like f(x)");
+      }
+    }
   }
 
   private nullish(): AST.Expression {
@@ -521,6 +654,9 @@ export class Parser {
         const optional = this.advance().type === TokenType.QuestionDot;
         const name = this.expectName("expected a property name after '.'");
         expr = { kind: "MemberExpression", object: expr, property: name.lexeme, propertySpan: name.span, optional, span: this.spanFromSpan(expr.span) };
+      } else if (this.check(TokenType.Question)) {
+        this.advance();
+        expr = { kind: "TryExpression", operand: expr, span: this.spanFromSpan(expr.span) };
       } else if (this.match(TokenType.LeftBracket)) {
         const index = this.withBraces(() => this.expression());
         this.expect(TokenType.RightBracket, "expected ']' after index");
@@ -551,7 +687,19 @@ export class Parser {
       case TokenType.Null:
         this.advance();
         return { kind: "NullLiteral", span: token.span };
+      case TokenType.Markup:
+        this.advance();
+        return this.markup(token.value as MarkupTag);
+      case TokenType.Match:
+        return this.matchExpression();
       case TokenType.Identifier:
+        if (token.lexeme === "live" && this.peek(1).type === TokenType.Query) {
+          this.advance();
+          const q = this.query();
+          q.live = true;
+          q.span = this.spanFrom(token);
+          return q;
+        }
         if (this.isMutationStart()) return this.mutation();
         this.advance();
         return { kind: "Identifier", name: token.lexeme, span: token.span };
@@ -649,6 +797,84 @@ export class Parser {
       body = this.withBraces(() => this.block());
     }
     return { kind: "LambdaExpression", params, returnType, body, span: this.spanFrom(start) };
+  }
+
+  // -------------------------------------------------------------------------
+  // match & markup
+  // -------------------------------------------------------------------------
+
+  private matchExpression(): AST.MatchExpression {
+    const start = this.advance(); // match
+    const subject = this.headExpression();
+    this.expect(TokenType.LeftBrace, "expected '{' after the match subject");
+    const arms: AST.MatchArm[] = [];
+    this.skipNewlines();
+    while (!this.check(TokenType.RightBrace) && !this.check(TokenType.EOF)) {
+      const armStart = this.peek();
+      const pattern = this.pattern();
+      const guard = this.match(TokenType.If) ? this.withBraces(() => this.nullish()) : undefined;
+      this.expect(TokenType.FatArrow, "expected '=>' after the pattern");
+      this.skipNewlines();
+      const body = this.check(TokenType.LeftBrace) ? this.block() : this.withBraces(() => this.expression());
+      arms.push({ pattern, guard, body, span: this.spanFrom(armStart) });
+      this.match(TokenType.Comma);
+      this.skipNewlines();
+    }
+    this.expect(TokenType.RightBrace, "expected '}' to close the match");
+    if (arms.length === 0) this.error(start.span, "MK2061", "a match needs at least one arm");
+    return { kind: "MatchExpression", subject, arms, span: this.spanFrom(start) };
+  }
+
+  private pattern(): AST.Pattern {
+    const t = this.peek();
+    if (t.type === TokenType.Identifier && t.lexeme === "_") {
+      this.advance();
+      return { kind: "WildcardPattern", span: t.span };
+    }
+    const literalStart = [TokenType.Minus, TokenType.Int, TokenType.Float, TokenType.String, TokenType.True, TokenType.False, TokenType.Null];
+    if (literalStart.includes(t.type)) {
+      const negative = this.match(TokenType.Minus);
+      const literal = this.primary() as AST.NumberLiteral | AST.StringLiteral | AST.BooleanLiteral | AST.NullLiteral;
+      if (negative) {
+        if (literal.kind !== "NumberLiteral") this.fail(t, "MK2062", "only numbers can be negated in a pattern");
+        literal.value = -literal.value;
+        literal.raw = `-${literal.raw}`;
+      }
+      return { kind: "LiteralPattern", value: literal, span: this.spanFrom(t) };
+    }
+    if (t.type !== TokenType.Identifier) this.fail(t, "MK2063", `expected a pattern, found ${describe(t)}`);
+    let name = this.advance();
+    while (this.match(TokenType.Dot)) name = this.expect(TokenType.Identifier, "expected a variant name after '.'");
+    const args: AST.Pattern[] = [];
+    if (this.match(TokenType.LeftParen)) {
+      while (!this.check(TokenType.RightParen)) {
+        args.push(this.pattern());
+        if (!this.match(TokenType.Comma)) break;
+      }
+      this.expect(TokenType.RightParen, "expected ')' after the pattern arguments");
+      return { kind: "VariantPattern", name: name.lexeme, args, span: this.spanFrom(t) };
+    }
+    if (/^[A-Z]/.test(name.lexeme)) return { kind: "VariantPattern", name: name.lexeme, args, span: this.spanFrom(t) };
+    return { kind: "BindingPattern", name: name.lexeme, span: name.span };
+  }
+
+  private markup(tree: MarkupTag): AST.MarkupElement {
+    const attributes: AST.MarkupAttribute[] = tree.attributes.map((a) => ({
+      name: a.name,
+      value:
+        a.value === true
+          ? true
+          : typeof a.value === "string"
+            ? ({ kind: "StringLiteral", value: a.value, span: a.span } as AST.StringLiteral)
+            : this.subExpression(a.value.source, a.value.start, a.span),
+      span: a.span,
+    }));
+    const children = tree.children.map((c): AST.MarkupElement["children"][number] => {
+      if (c.kind === "text") return { kind: "MarkupText", value: c.value, span: tree.span };
+      if (c.kind === "element") return this.markup(c);
+      return this.subExpression(c.source, c.start, tree.span);
+    });
+    return { kind: "MarkupElement", tag: tree.tag, attributes, children, span: tree.span };
   }
 
   // -------------------------------------------------------------------------
@@ -944,6 +1170,9 @@ function endsWithBlock(stmt: AST.Statement): boolean {
     case "IfStatement":
     case "WhileStatement":
     case "ForStatement":
+    case "EnumDeclaration":
+    case "RouteDeclaration":
+    case "TestDeclaration":
       return true;
     default:
       return false;

@@ -240,12 +240,73 @@ export class SqlAdapter implements Adapter {
 
 const SQLITE_TYPES: Record<string, string> = { int: "INTEGER", float: "REAL", string: "TEXT", bool: "INTEGER", json: "TEXT" };
 
+function columnSQL(name: string, type: ColumnType): string {
+  const nullable = type.endsWith("?");
+  const base = type.replace("?", "");
+  if (name === "id" && base === "int") return `${quoteIdent(name)} INTEGER PRIMARY KEY`;
+  return `${quoteIdent(name)} ${SQLITE_TYPES[base] ?? "TEXT"}${nullable ? "" : " NOT NULL"}`;
+}
+
+export function createTableSQL(model: Model<any>, ifNotExists = true): string {
+  const columns = Object.entries(model.fields ?? {}).map(([name, type]) => columnSQL(name, type));
+  return `CREATE TABLE ${ifNotExists ? "IF NOT EXISTS " : ""}${quoteIdent(model.name)} (${columns.join(", ")})`;
+}
+
+const ZERO: Record<string, string> = { int: "0", float: "0", bool: "0", string: "''", json: "'null'" };
+
+export interface MigrationPlan {
+  statements: string[];
+  warnings: string[];
+}
+
+interface SqliteDatabase {
+  close(): void;
+  exec(sql: string): void;
+  prepare(sql: string): { all(...params: unknown[]): unknown[] };
+}
+
 /** SQLite through Node's built-in `node:sqlite` — no dependencies. Creates tables from model schemas. */
 export class SqliteAdapter extends SqlAdapter {
   private readonly created = new Set<string>();
 
-  private constructor(private readonly database: { close(): void; exec(sql: string): void }, driver: SqlDriver) {
+  private constructor(private readonly database: SqliteDatabase, driver: SqlDriver) {
     super("sqlite", driver);
+  }
+
+  /**
+   * Brings the database schema in line with the models: creates missing tables and adds new
+   * columns. Dropping columns is destructive and only happens with `allowDrop`.
+   */
+  migrate(models: Model<any>[], options: { allowDrop?: boolean; dryRun?: boolean } = {}): MigrationPlan {
+    const plan: MigrationPlan = { statements: [], warnings: [] };
+    for (const model of models) {
+      if (!model.fields) continue;
+      const existing = this.database.prepare(`PRAGMA table_info(${quoteIdent(model.name)})`).all() as { name: string; type: string }[];
+      if (!existing.length) {
+        plan.statements.push(createTableSQL(model, false));
+        continue;
+      }
+      const have = new Map(existing.map((c) => [c.name, c.type.toUpperCase()]));
+      for (const [name, type] of Object.entries(model.fields)) {
+        const base = type.replace("?", "");
+        const current = have.get(name);
+        if (current === undefined) {
+          const def = type.endsWith("?") ? "" : ` DEFAULT ${ZERO[base] ?? "NULL"}`;
+          plan.statements.push(`ALTER TABLE ${quoteIdent(model.name)} ADD COLUMN ${columnSQL(name, type)}${def}`);
+        } else if (current !== (SQLITE_TYPES[base] ?? "TEXT")) {
+          plan.warnings.push(`${model.name}.${name} is ${current} in the database but '${type}' in the model; change it by hand`);
+        }
+      }
+      for (const column of have.keys()) {
+        if (column in model.fields) continue;
+        if (options.allowDrop) plan.statements.push(`ALTER TABLE ${quoteIdent(model.name)} DROP COLUMN ${quoteIdent(column)}`);
+        else plan.warnings.push(`${model.name}.${column} is no longer in the model (run with --allow-drop to remove it)`);
+      }
+    }
+    if (!options.dryRun && plan.statements.length) {
+      this.database.exec(`BEGIN; ${plan.statements.join("; ")}; COMMIT;`);
+    }
+    return plan;
   }
 
   static async open(path: string): Promise<SqliteAdapter> {
@@ -261,13 +322,7 @@ export class SqliteAdapter extends SqlAdapter {
 
   protected override async prepare(model: Model<any>): Promise<void> {
     if (!model.fields || this.created.has(model.name)) return;
-    const columns = Object.entries(model.fields).map(([name, type]) => {
-      const nullable = type.endsWith("?");
-      const base = type.replace("?", "");
-      if (name === "id" && base === "int") return `${quoteIdent(name)} INTEGER PRIMARY KEY`;
-      return `${quoteIdent(name)} ${SQLITE_TYPES[base] ?? "TEXT"}${nullable ? "" : " NOT NULL"}`;
-    });
-    this.database.exec(`CREATE TABLE IF NOT EXISTS ${quoteIdent(model.name)} (${columns.join(", ")})`);
+    this.database.exec(createTableSQL(model));
     this.created.add(model.name);
   }
 
@@ -337,12 +392,16 @@ export class QueryBuilder<T> {
 
   async update(values: { [K in Columns<T>]?: T[K] | Expr }): Promise<number> {
     this.db.log("update", () => updateSQL(this.spec, values, "sqlite"));
-    return (await this.db.adapter()).update(this.spec, values);
+    const changed = await (await this.db.adapter()).update(this.spec, values);
+    if (changed) await this.db.changed(this.spec.model.name);
+    return changed;
   }
 
   async delete(): Promise<number> {
     this.db.log("delete", () => deleteSQL(this.spec, "sqlite"));
-    return (await this.db.adapter()).delete(this.spec);
+    const changed = await (await this.db.adapter()).delete(this.spec);
+    if (changed) await this.db.changed(this.spec.model.name);
+    return changed;
   }
 
   /** The parameterized SQL this query compiles to. */
@@ -359,6 +418,20 @@ export class QueryBuilder<T> {
 export class Database {
   private current?: Promise<Adapter>;
   private readonly models = new Map<string, Model<any>>();
+  private readonly listeners = new Map<string, Set<() => Promise<void>>>();
+
+  /** Calls `fn` after every write to `table`; returns an unsubscribe function. */
+  onChange(table: string, fn: () => Promise<void>): () => void {
+    let set = this.listeners.get(table);
+    if (!set) this.listeners.set(table, (set = new Set()));
+    set.add(fn);
+    return () => set.delete(fn);
+  }
+
+  /** @internal Notifies live queries; resolves when they have refreshed. */
+  async changed(table: string): Promise<void> {
+    await Promise.all([...(this.listeners.get(table) ?? [])].map((fn) => fn()));
+  }
 
   model<T>(name: string, fields?: Record<string, ColumnType>): Model<T> {
     const model: Model<T> = Object.freeze({ name, fields: fields ? Object.freeze({ ...fields }) : undefined });
@@ -382,7 +455,9 @@ export class Database {
   async insert<T>(model: Model<T> | string, values: Partial<T>): Promise<T> {
     const m = this.resolve(model);
     this.log("insert", () => insertSQL(m, values as Row, "sqlite"));
-    return (await (await this.adapter()).insert(m, values as Row)) as T;
+    const row = (await (await this.adapter()).insert(m, values as Row)) as T;
+    await this.changed(m.name);
+    return row;
   }
 
   async close(): Promise<void> {

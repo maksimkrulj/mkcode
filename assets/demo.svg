@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="539" viewBox="0 0 1320 539" role="img" aria-label="MK source compiling to TypeScript">
+<style>
+text{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#d7dce8;opacity:0}
+.label{font:600 13px system-ui,-apple-system,Segoe UI,sans-serif;opacity:1;fill:#8790a6}
+.arrow{animation:pulse 14s infinite}
+@keyframes pulse{0%,38%{opacity:.25}42%,93%{opacity:1}100%{opacity:.25}}
+@keyframes a0{0%,2.00%{opacity:0;transform:translateX(-6px)}3.20%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a1{0%,4.62%{opacity:0;transform:translateX(-6px)}5.82%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a2{0%,7.23%{opacity:0;transform:translateX(-6px)}8.43%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a3{0%,9.85%{opacity:0;transform:translateX(-6px)}11.05%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a4{0%,12.46%{opacity:0;transform:translateX(-6px)}13.66%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a5{0%,15.08%{opacity:0;transform:translateX(-6px)}16.28%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a6{0%,17.69%{opacity:0;transform:translateX(-6px)}18.89%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a7{0%,20.31%{opacity:0;transform:translateX(-6px)}21.51%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a8{0%,22.92%{opacity:0;transform:translateX(-6px)}24.12%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a9{0%,25.54%{opacity:0;transform:translateX(-6px)}26.74%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a10{0%,28.15%{opacity:0;transform:translateX(-6px)}29.35%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a11{0%,30.77%{opacity:0;transform:translateX(-6px)}31.97%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a12{0%,33.38%{opacity:0;transform:translateX(-6px)}34.58%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a13{0%,45.00%{opacity:0;transform:translateX(-6px)}46.20%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a14{0%,46.30%{opacity:0;transform:translateX(-6px)}47.50%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a15{0%,47.61%{opacity:0;transform:translateX(-6px)}48.81%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a16{0%,48.91%{opacity:0;transform:translateX(-6px)}50.11%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a17{0%,50.22%{opacity:0;transform:translateX(-6px)}51.42%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a18{0%,51.52%{opacity:0;transform:translateX(-6px)}52.72%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a19{0%,52.83%{opacity:0;transform:translateX(-6px)}54.03%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a20{0%,54.13%{opacity:0;transform:translateX(-6px)}55.33%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a21{0%,55.43%{opacity:0;transform:translateX(-6px)}56.63%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a22{0%,56.74%{opacity:0;transform:translateX(-6px)}57.94%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a23{0%,58.04%{opacity:0;transform:translateX(-6px)}59.24%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a24{0%,59.35%{opacity:0;transform:translateX(-6px)}60.55%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a25{0%,60.65%{opacity:0;transform:translateX(-6px)}61.85%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a26{0%,61.96%{opacity:0;transform:translateX(-6px)}63.16%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a27{0%,63.26%{opacity:0;transform:translateX(-6px)}64.46%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a28{0%,64.57%{opacity:0;transform:translateX(-6px)}65.77%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a29{0%,65.87%{opacity:0;transform:translateX(-6px)}67.07%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a30{0%,67.17%{opacity:0;transform:translateX(-6px)}68.37%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a31{0%,68.48%{opacity:0;transform:translateX(-6px)}69.68%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a32{0%,69.78%{opacity:0;transform:translateX(-6px)}70.98%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a33{0%,71.09%{opacity:0;transform:translateX(-6px)}72.29%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a34{0%,72.39%{opacity:0;transform:translateX(-6px)}73.59%,93%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes a35{0%,73.70%{opacity:0;transform:translateX(-6px)}74.90%,93%{opacity:1;transform:none}100%{opacity:0}}
+</style>
+<rect width="1320" height="539" rx="16" fill="#0d1017"/>
+<rect x="16" y="16" width="450" height="507" rx="12" fill="#131822" stroke="#252d3f"/>
+<rect x="530" y="16" width="774" height="507" rx="12" fill="#131822" stroke="#252d3f"/>
+<circle cx="36" cy="38" r="5" fill="#f87171"/><circle cx="52" cy="38" r="5" fill="#fbbf24"/><circle cx="68" cy="38" r="5" fill="#34d399"/>
+<text class="label" x="86" y="42">app.mk — what you write</text>
+<text class="label" x="546" y="42">app.ts — what mk build emits (async/await inferred)</text>
+<g class="arrow"><circle cx="498" cy="269.5" r="20" fill="#7c3aed"/><path d="M490 269.5h14m-6-6 6 6-6 6" stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+<text x="32" y="74" style="animation:a0 14s infinite" xml:space="preserve"><tspan fill="#c792ea">model</tspan> <tspan fill="#ffcb6b">User</tspan> { id: <tspan fill="#ffcb6b">int</tspan>, name: <tspan fill="#ffcb6b">string</tspan>, score: <tspan fill="#ffcb6b">int</tspan> }</text>
+<text x="32" y="93" style="animation:a1 14s infinite" xml:space="preserve"></text>
+<text x="32" y="112" style="animation:a2 14s infinite" xml:space="preserve"><tspan fill="#c792ea">signal</tspan> minScore = <tspan fill="#f78c6c">50</tspan></text>
+<text x="32" y="131" style="animation:a3 14s infinite" xml:space="preserve"><tspan fill="#c792ea">signal</tspan> leaders = <tspan fill="#c792ea">live</tspan> <tspan fill="#22d3ee">query</tspan> <tspan fill="#ffcb6b">User</tspan> <tspan fill="#22d3ee">where</tspan> score &gt;= minScore</text>
+<text x="32" y="150" style="animation:a4 14s infinite" xml:space="preserve"></text>
+<text x="32" y="169" style="animation:a5 14s infinite" xml:space="preserve"><tspan fill="#c792ea">fn</tspan> <tspan fill="#82aaff">topUsers</tspan>(min: <tspan fill="#ffcb6b">int</tspan>) -&gt; <tspan fill="#ffcb6b">List</tspan>&lt;<tspan fill="#ffcb6b">User</tspan>&gt; {</text>
+<text x="32" y="188" style="animation:a6 14s infinite" xml:space="preserve">    <tspan fill="#c792ea">return</tspan> <tspan fill="#22d3ee">query</tspan> <tspan fill="#ffcb6b">User</tspan> <tspan fill="#22d3ee">where</tspan> score &gt;= min</text>
+<text x="32" y="207" style="animation:a7 14s infinite" xml:space="preserve">}</text>
+<text x="32" y="226" style="animation:a8 14s infinite" xml:space="preserve"></text>
+<text x="32" y="245" style="animation:a9 14s infinite" xml:space="preserve"><tspan fill="#c792ea">fn</tspan> <tspan fill="#82aaff">main</tspan>() {</text>
+<text x="32" y="264" style="animation:a10 14s infinite" xml:space="preserve">    <tspan fill="#c792ea">let</tspan> users = <tspan fill="#82aaff">topUsers</tspan>(<tspan fill="#f78c6c">80</tspan>)</text>
+<text x="32" y="283" style="animation:a11 14s infinite" xml:space="preserve">    <tspan fill="#82aaff">print</tspan>(users |&gt; <tspan fill="#82aaff">map</tspan>(<tspan fill="#c792ea">fn</tspan>(u) =&gt; u.name))</text>
+<text x="32" y="302" style="animation:a12 14s infinite" xml:space="preserve">}</text>
+<text x="546" y="74" style="animation:a13 14s infinite" xml:space="preserve"><tspan fill="#c792ea">import</tspan> * <tspan fill="#c792ea">as</tspan> <tspan fill="#22d3ee">$mk</tspan> <tspan fill="#c792ea">from</tspan> <tspan fill="#c3e88d">"mk-lang/runtime"</tspan>;</text>
+<text x="546" y="93" style="animation:a14 14s infinite" xml:space="preserve"></text>
+<text x="546" y="112" style="animation:a15 14s infinite" xml:space="preserve"><tspan fill="#c792ea">interface</tspan> <tspan fill="#ffcb6b">User</tspan> {</text>
+<text x="546" y="131" style="animation:a16 14s infinite" xml:space="preserve">  id: <tspan fill="#ffcb6b">number</tspan>;</text>
+<text x="546" y="150" style="animation:a17 14s infinite" xml:space="preserve">  name: <tspan fill="#ffcb6b">string</tspan>;</text>
+<text x="546" y="169" style="animation:a18 14s infinite" xml:space="preserve">  score: <tspan fill="#ffcb6b">number</tspan>;</text>
+<text x="546" y="188" style="animation:a19 14s infinite" xml:space="preserve">}</text>
+<text x="546" y="207" style="animation:a20 14s infinite" xml:space="preserve"><tspan fill="#c792ea">const</tspan> <tspan fill="#ffcb6b">User</tspan> = <tspan fill="#22d3ee">$mk</tspan>.db.model&lt;<tspan fill="#ffcb6b">User</tspan>&gt;(<tspan fill="#c3e88d">"User"</tspan>, { id: <tspan fill="#c3e88d">"int"</tspan>, name: <tspan fill="#c3e88d">"string"</tspan>, score: <tspan fill="#c3e88d">"int"</tspan> });</text>
+<text x="546" y="226" style="animation:a21 14s infinite" xml:space="preserve"></text>
+<text x="546" y="245" style="animation:a22 14s infinite" xml:space="preserve"><tspan fill="#c792ea">const</tspan> minScore = <tspan fill="#22d3ee">$mk</tspan>.<tspan fill="#82aaff">signal</tspan>(<tspan fill="#f78c6c">50</tspan>);</text>
+<text x="546" y="264" style="animation:a23 14s infinite" xml:space="preserve"><tspan fill="#c792ea">const</tspan> leaders = <tspan fill="#22d3ee">$mk</tspan>.<tspan fill="#82aaff">live</tspan>(<tspan fill="#ffcb6b">User</tspan>, () =&gt; <tspan fill="#22d3ee">$mk</tspan>.db.<tspan fill="#c792ea">from</tspan>(<tspan fill="#ffcb6b">User</tspan>).<tspan fill="#82aaff">where</tspan>(<tspan fill="#22d3ee">$mk</tspan>.q.<tspan fill="#82aaff">gte</tspan>(<tspan fill="#22d3ee">$mk</tspan>.q.<tspan fill="#82aaff">col</tspan>(<tspan fill="#c3e88d">"score"</tspan>), minScore.value)).<tspan fill="#82aaff">all</tspan>(), []);</text>
+<text x="546" y="283" style="animation:a24 14s infinite" xml:space="preserve"><tspan fill="#c792ea">await</tspan> leaders.loaded;</text>
+<text x="546" y="302" style="animation:a25 14s infinite" xml:space="preserve"></text>
+<text x="546" y="321" style="animation:a26 14s infinite" xml:space="preserve"><tspan fill="#c792ea">async</tspan> <tspan fill="#c792ea">function</tspan> <tspan fill="#82aaff">topUsers</tspan>(min: <tspan fill="#ffcb6b">number</tspan>): <tspan fill="#ffcb6b">Promise</tspan>&lt;<tspan fill="#ffcb6b">User</tspan>[]&gt; {</text>
+<text x="546" y="340" style="animation:a27 14s infinite" xml:space="preserve">  <tspan fill="#c792ea">return</tspan> <tspan fill="#c792ea">await</tspan> <tspan fill="#22d3ee">$mk</tspan>.db.<tspan fill="#c792ea">from</tspan>(<tspan fill="#ffcb6b">User</tspan>).<tspan fill="#82aaff">where</tspan>(<tspan fill="#22d3ee">$mk</tspan>.q.<tspan fill="#82aaff">gte</tspan>(<tspan fill="#22d3ee">$mk</tspan>.q.<tspan fill="#82aaff">col</tspan>(<tspan fill="#c3e88d">"score"</tspan>), min)).<tspan fill="#82aaff">all</tspan>();</text>
+<text x="546" y="359" style="animation:a28 14s infinite" xml:space="preserve">}</text>
+<text x="546" y="378" style="animation:a29 14s infinite" xml:space="preserve"></text>
+<text x="546" y="397" style="animation:a30 14s infinite" xml:space="preserve"><tspan fill="#c792ea">async</tspan> <tspan fill="#c792ea">function</tspan> <tspan fill="#82aaff">main</tspan>() {</text>
+<text x="546" y="416" style="animation:a31 14s infinite" xml:space="preserve">  <tspan fill="#c792ea">const</tspan> users = <tspan fill="#c792ea">await</tspan> <tspan fill="#82aaff">topUsers</tspan>(<tspan fill="#f78c6c">80</tspan>);</text>
+<text x="546" y="435" style="animation:a32 14s infinite" xml:space="preserve">  console.<tspan fill="#82aaff">log</tspan>(<tspan fill="#22d3ee">$mk</tspan>.<tspan fill="#82aaff">map</tspan>(users, (u) =&gt; u.name));</text>
+<text x="546" y="454" style="animation:a33 14s infinite" xml:space="preserve">}</text>
+<text x="546" y="473" style="animation:a34 14s infinite" xml:space="preserve"></text>
+<text x="546" y="492" style="animation:a35 14s infinite" xml:space="preserve"><tspan fill="#c792ea">await</tspan> <tspan fill="#82aaff">main</tspan>();</text>
+</svg>

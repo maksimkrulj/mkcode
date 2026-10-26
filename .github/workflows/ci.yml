@@ -27,6 +27,8 @@ jobs:
       - run: npm test
       - name: Run the canonical example
         run: node bin/mk.js run example.mk --seed examples/users.seed.json
+      - name: Run the MK test blocks in examples/
+        run: node bin/mk.js test examples
       - name: Ownership errors are reported
         shell: bash
         run: |

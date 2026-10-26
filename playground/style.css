@@ -148,6 +148,12 @@ kbd { font: 11px var(--mono); opacity: 0.75; margin-left: 4px; }
 #source::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); color: transparent; }
 
 .output { flex: 1; min-height: 0; }
+.preview { flex: 1; min-height: 0; overflow: auto; padding: 20px; background: #fff; color: #1f2433; font: 15px/1.5 system-ui, sans-serif; }
+.preview button { color: #fff; background: #7c3aed; border: none; border-radius: 8px; padding: 8px 14px; font-weight: 600; }
+.preview input { font: inherit; padding: 6px 10px; border: 1px solid #cbd2e1; border-radius: 6px; color: #1f2433; background: #fff; }
+.preview li.done { text-decoration: line-through; color: #8a93a8; }
+.preview .card { border: 1px solid #e3e7f0; border-radius: 12px; padding: 16px; max-width: 420px; }
+.t-markup { color: var(--t-type); }
 .output.stale { opacity: 0.45; }
 .output .log-error { color: var(--error); }
 .output .log-warn { color: var(--warning); }

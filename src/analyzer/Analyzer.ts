@@ -8,6 +8,7 @@ import {
   BOOL,
   FLOAT,
   INT,
+  MARKUP,
   NULL,
   STRING,
   VOID,
@@ -33,7 +34,9 @@ export type SymbolKind =
   | "function"
   | "model"
   | "import"
-  | "builtin";
+  | "builtin"
+  | "enum"
+  | "variant";
 
 export interface ParamInfo {
   name: string;
@@ -63,6 +66,26 @@ export interface ModelInfo {
   origin: "declared" | "implicit" | "imported" | "foreign";
 }
 
+export interface VariantInfo {
+  enumName: string;
+  name: string;
+  fields: { name: string; type: Type }[];
+}
+
+export interface EnumInfo {
+  name: string;
+  variants: Map<string, VariantInfo>;
+}
+
+/** `Result<T, E>` behaves like `enum Result { Ok(value: T), Err(error: E) }`. */
+const RESULT_ENUM: EnumInfo = {
+  name: "Result",
+  variants: new Map([
+    ["Ok", { enumName: "Result", name: "Ok", fields: [{ name: "value", type: ANY }] }],
+    ["Err", { enumName: "Result", name: "Err", fields: [{ name: "error", type: ANY }] }],
+  ]),
+};
+
 export interface MKSymbol {
   name: string;
   kind: SymbolKind;
@@ -79,6 +102,8 @@ export interface MKSymbol {
   fn?: FunctionInfo;
   builtin?: Builtin;
   model?: ModelInfo;
+  enumInfo?: EnumInfo;
+  variant?: VariantInfo;
   consumedAt?: SourceSpan;
   consumedBy?: Context;
   captures: { context: Context; span: SourceSpan }[];
@@ -88,7 +113,9 @@ export type ExportedSymbol =
   | { kind: "function"; isAsync: boolean; params: ParamInfo[]; returns: Type }
   | { kind: "signal"; derived: boolean; type: Type }
   | { kind: "variable"; type: Type }
-  | { kind: "model"; fields?: Map<string, Type> };
+  | { kind: "model"; fields?: Map<string, Type> }
+  | { kind: "enum"; info: EnumInfo }
+  | { kind: "variant"; variant: VariantInfo };
 
 /** What other MK modules can see when they import this one. */
 export interface ModuleInterface {
@@ -109,6 +136,11 @@ export interface AnalysisResult {
   interface: ModuleInterface;
   /** The `main` entry point, if the module declares one. */
   main?: FunctionInfo;
+  enums: Map<string, EnumInfo>;
+  /** Every declared symbol (for editor tooling). */
+  symbols: MKSymbol[];
+  hasRoutes: boolean;
+  hasTests: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -125,6 +157,8 @@ interface Context {
   returnType?: Type;
   loopDepth: number;
   readsSignal: boolean;
+  /** Body of a `view`: live queries load in the background instead of blocking. */
+  view?: boolean;
   /** Moves of the parent's variables made inside a `spawn` body (ownership moves into the task). */
   escapes: Map<MKSymbol, Move>;
 }
@@ -182,6 +216,20 @@ export class Analyzer {
   /** Calls and queries inside parameter defaults: JavaScript can't `await` there. */
   private readonly defaultValueIO: (AST.CallExpression | AST.DatabaseExpression)[] = [];
   private inDefaultValue = false;
+  private readonly enums = new Map<string, EnumInfo>();
+  /** Higher-order built-in calls whose function argument may turn out to do I/O. */
+  private readonly hofSites: { call: AST.CallExpression; info: FunctionInfo }[] = [];
+  /** Bodies that must stay synchronous (markup holes), checked after async inference. */
+  private readonly syncOnly: { info: FunctionInfo; span: SourceSpan; message: string }[] = [];
+  /** Why `match` / `?` can't be lowered to statements here (conditional evaluation), if so. */
+  private lowerBlocked?: string;
+  private allowLive = false;
+  /** Parameter types for an unannotated lambda passed to `map`, `filter`, ... */
+  private lambdaHint?: Type[];
+  private readonly routes = new Set<string>();
+  /** Optional bindings proven non-null on the current path (`if x == null { return }`). */
+  private narrowed = new Map<MKSymbol, Type>();
+  private hasTests = false;
   private moves: MoveState = new Map();
   private scope!: Scope;
   private ctx!: Context;
@@ -202,10 +250,13 @@ export class Analyzer {
     const moduleScope = this.scope;
 
     this.declareHoisted(program.body);
-    const deferred: AST.FunctionDeclaration[] = [];
+    const deferred: AST.Statement[] = [];
     this.statements(program.body, deferred);
     // Function bodies are checked after the whole module so they can see every top-level binding.
-    for (const fn of deferred) this.functionDeclaration(fn, false);
+    for (const d of deferred) {
+      if (d.kind === "FunctionDeclaration") this.functionDeclaration(d, false);
+      else this.statement(d);
+    }
 
     this.inferAsync();
     this.checkCapturedConsumes();
@@ -217,6 +268,10 @@ export class Analyzer {
       models: this.models,
       interface: this.buildInterface(program, moduleScope),
       main: main?.kind === "function" ? main.fn : undefined,
+      enums: this.enums,
+      symbols: this.allSymbols,
+      hasRoutes: this.routes.size > 0,
+      hasTests: this.hasTests,
     };
   }
 
@@ -228,6 +283,7 @@ export class Analyzer {
   private declareHoisted(body: AST.Statement[]): void {
     for (const stmt of body) if (stmt.kind === "ModelDeclaration") this.declareModel(stmt);
     for (const stmt of body) if (stmt.kind === "ImportDeclaration") this.declareImport(stmt);
+    for (const stmt of body) if (stmt.kind === "EnumDeclaration") this.declareEnum(stmt);
     for (const stmt of body) {
       if (stmt.kind !== "FunctionDeclaration") continue;
       const params = stmt.params.map((p) => this.paramInfo(p));
@@ -235,6 +291,21 @@ export class Analyzer {
       this.fnNodes.set(stmt, info);
       const type: Type = { kind: "fn", params: params.map((p) => p.type), returns: info.returns };
       this.declare(this.symbol(stmt.name, "function", type, stmt.nameSpan, { fn: info, exported: stmt.exported }));
+    }
+  }
+
+  private declareEnum(stmt: AST.EnumDeclaration): void {
+    const info: EnumInfo = { name: stmt.name, variants: new Map() };
+    this.enums.set(stmt.name, info);
+    const enumType: Type = { kind: "enum", name: stmt.name };
+    this.declare(this.symbol(stmt.name, "enum", enumType, stmt.nameSpan, { enumInfo: info, exported: stmt.exported }));
+    for (const v of stmt.variants) {
+      if (info.variants.has(v.name)) this.error("MK3403", `duplicate variant '${v.name}' in enum '${stmt.name}'`, v.span);
+      const fields = v.fields.map((f) => ({ name: f.name, type: this.resolveType(f.type) }));
+      const variant: VariantInfo = { enumName: stmt.name, name: v.name, fields };
+      info.variants.set(v.name, variant);
+      const type: Type = fields.length ? { kind: "fn", params: fields.map((f) => f.type), returns: enumType } : enumType;
+      this.declare(this.symbol(v.name, "variant", type, v.span, { variant, exported: stmt.exported }));
     }
   }
 
@@ -282,6 +353,17 @@ export class Analyzer {
         return this.symbol(spec.local, "signal", exp.type, spec.span, { derived: exp.derived, mutable: !exp.derived });
       case "variable":
         return this.symbol(spec.local, "variable", exp.type, spec.span);
+      case "enum": {
+        this.enums.set(spec.local, exp.info);
+        return this.symbol(spec.local, "enum", { kind: "enum", name: exp.info.name }, spec.span, { enumInfo: exp.info });
+      }
+      case "variant": {
+        const enumType: Type = { kind: "enum", name: exp.variant.enumName };
+        const type: Type = exp.variant.fields.length
+          ? { kind: "fn", params: exp.variant.fields.map((f) => f.type), returns: enumType }
+          : enumType;
+        return this.symbol(spec.local, "variant", type, spec.span, { variant: exp.variant });
+      }
       case "model": {
         const model: ModelInfo = { name: spec.imported, fields: exp.fields, origin: "imported" };
         this.models.set(spec.local, model);
@@ -315,9 +397,19 @@ export class Analyzer {
       } else if (node.name === "Task") {
         arity(1);
         type = { kind: "task", inner: args[0] ?? ANY };
+      } else if (node.name === "Result") {
+        arity(2);
+        type = { kind: "result", ok: args[0] ?? ANY, err: args[1] ?? ANY };
+      } else if (node.name === "Markup" || node.name === "Html") {
+        type = MARKUP;
       } else {
         const sym = this.scope.lookup(node.name);
-        type = sym?.kind === "model" ? { kind: "model", name: node.name } : { kind: "named", name: node.name, args };
+        type =
+          sym?.kind === "model"
+            ? { kind: "model", name: node.name }
+            : sym?.kind === "enum"
+              ? { kind: "enum", name: sym.enumInfo!.name }
+              : { kind: "named", name: node.name, args };
       }
     }
     return node.optional ? optional(type) : type;
@@ -327,7 +419,7 @@ export class Analyzer {
   // Statements — each returns `true` if it never completes normally (return/break/continue)
   // -------------------------------------------------------------------------
 
-  private statements(body: AST.Statement[], deferred?: AST.FunctionDeclaration[]): boolean {
+  private statements(body: AST.Statement[], deferred?: AST.Statement[]): boolean {
     let terminated = false;
     let warned = false;
     for (const stmt of body) {
@@ -335,7 +427,7 @@ export class Analyzer {
         this.diagnostics.warning("MK3601", "unreachable code", stmt.span);
         warned = true;
       }
-      if (stmt.kind === "FunctionDeclaration" && deferred) {
+      if (deferred && (stmt.kind === "FunctionDeclaration" || stmt.kind === "RouteDeclaration" || stmt.kind === "TestDeclaration")) {
         deferred.push(stmt);
         continue;
       }
@@ -348,6 +440,18 @@ export class Analyzer {
     switch (stmt.kind) {
       case "ImportDeclaration":
       case "ModelDeclaration":
+      case "EnumDeclaration":
+        return false;
+      case "RouteDeclaration":
+        this.routeDeclaration(stmt);
+        return false;
+      case "TestDeclaration":
+        this.hasTests = true;
+        this.withContext("function", this.newInfo(`test ${stmt.name}`, [], VOID), undefined, () => this.blockBody(stmt.body), false);
+        return false;
+      case "AssertStatement":
+        this.condition(stmt.test);
+        if (stmt.message) this.expr(stmt.message);
         return false;
       case "FunctionDeclaration":
         this.functionDeclaration(stmt, true);
@@ -371,7 +475,7 @@ export class Analyzer {
       case "IfStatement":
         return this.ifStatement(stmt);
       case "WhileStatement":
-        this.condition(stmt.test);
+        this.blocked("a while condition", () => this.condition(stmt.test));
         this.loopBody(() => this.block(stmt.body));
         return false;
       case "ForStatement":
@@ -395,7 +499,7 @@ export class Analyzer {
 
   /** Statements of a block in the current scope (function bodies share the parameter scope). */
   private blockBody(node: AST.BlockStatement): boolean {
-    this.declareHoisted(node.body.filter((s) => s.kind === "FunctionDeclaration" || s.kind === "ModelDeclaration"));
+    this.declareHoisted(node.body.filter((s) => s.kind === "FunctionDeclaration" || s.kind === "ModelDeclaration" || s.kind === "EnumDeclaration"));
     return this.statements(node.body);
   }
 
@@ -408,6 +512,11 @@ export class Analyzer {
       declared,
       () => {
         this.declareParams(node.params, info.params);
+        if (node.isView) {
+          this.ctx.view = true;
+          this.viewBody(node);
+          return;
+        }
         const terminates = this.blockBody(node.body);
         if (declared && declared.kind !== "void" && declared.kind !== "any" && declared.kind !== "optional" && !terminates) {
           this.error("MK3105", `function '${node.name}' must return a value of type '${typeToString(declared)}' on every path`, node.nameSpan);
@@ -447,6 +556,7 @@ export class Analyzer {
   }
 
   private signalDeclaration(node: AST.SignalDeclaration): void {
+    if (node.init.kind === "QueryExpression" && node.init.live) return this.liveSignal(node, node.init);
     const info = this.newInfo(`<signal ${node.name}>`, [], ANY);
     let initType: Type = ANY;
     const computed = this.withContext("computed", info, undefined, () => {
@@ -500,22 +610,53 @@ export class Analyzer {
 
   private ifStatement(node: AST.IfStatement): boolean {
     this.condition(node.test);
+    const test = this.nullTest(node.test);
     const before = this.moves;
 
     this.moves = new Map(before);
-    const thenExits = this.block(node.consequent);
+    const thenExits = this.narrowing(test && !test.isNull ? test : undefined, () => this.block(node.consequent));
     const afterThen = this.moves;
 
     this.moves = new Map(before);
     let elseExits = false;
-    if (node.alternate) elseExits = node.alternate.kind === "IfStatement" ? this.ifStatement(node.alternate) : this.block(node.alternate);
+    const alternate = node.alternate;
+    if (alternate) {
+      elseExits = this.narrowing(test?.isNull ? test : undefined, () =>
+        alternate.kind === "IfStatement" ? this.ifStatement(alternate) : this.block(alternate),
+      );
+    }
     const afterElse = this.moves;
+
+    // `if x == null { return }` proves x non-null for the rest of the block (and vice versa).
+    if (test && ((test.isNull && thenExits && !elseExits) || (!test.isNull && elseExits && !thenExits))) {
+      this.narrowed.set(test.sym, test.inner);
+    }
 
     // A branch that returns doesn't flow into the code after the `if`.
     if (thenExits && !elseExits) this.moves = afterElse;
     else if (elseExits && !thenExits) this.moves = afterThen;
     else this.moves = mergeMoves(afterThen, afterElse);
     return thenExits && elseExits;
+  }
+
+  /** `x == null` / `x != null` on an optional binding. */
+  private nullTest(test: AST.Expression): { sym: MKSymbol; inner: Type; isNull: boolean } | undefined {
+    if (test.kind !== "BinaryExpression" || (test.operator !== "==" && test.operator !== "!=")) return undefined;
+    const id = test.left.kind === "Identifier" && test.right.kind === "NullLiteral" ? test.left : test.right.kind === "Identifier" && test.left.kind === "NullLiteral" ? test.right : undefined;
+    const sym = id && this.resolutions.get(id);
+    if (!sym || sym.type.kind !== "optional") return undefined;
+    return { sym, inner: sym.type.inner, isNull: test.operator === "==" };
+  }
+
+  private narrowing<T>(test: { sym: MKSymbol; inner: Type } | undefined, fn: () => T): T {
+    const saved = this.narrowed;
+    this.narrowed = new Map(saved);
+    if (test) this.narrowed.set(test.sym, test.inner);
+    try {
+      return fn();
+    } finally {
+      this.narrowed = saved;
+    }
   }
 
   private forStatement(node: AST.ForStatement): void {
@@ -558,6 +699,12 @@ export class Analyzer {
   private expr(node: AST.Expression): Type {
     if (this.inDefaultValue && (node.kind === "CallExpression" || isDatabaseExpression(node))) this.defaultValueIO.push(node);
     switch (node.kind) {
+      case "MatchExpression":
+        return this.matchExpression(node);
+      case "TryExpression":
+        return this.tryExpression(node);
+      case "MarkupElement":
+        return this.markupElement(node);
       case "NumberLiteral":
         return node.isFloat ? FLOAT : INT;
       case "StringLiteral":
@@ -587,7 +734,7 @@ export class Analyzer {
       case "CallExpression":
         return this.call(node);
       case "MemberExpression":
-        return this.member(node, this.expr(node.object));
+        return this.enumMember(node) ?? this.member(node, this.expr(node.object));
       case "IndexExpression": {
         const object = this.expr(node.object);
         this.expr(node.index);
@@ -629,6 +776,12 @@ export class Analyzer {
     if (sym.kind === "model") {
       this.error("MK3410", `model '${sym.name}' is not a value; use 'query ${sym.name}' to read rows`, node.span);
     }
+    const narrowed = this.narrowed.get(sym);
+    if (narrowed) return narrowed;
+    if (sym.kind === "enum") {
+      const first = [...sym.enumInfo!.variants.keys()][0] ?? "Variant";
+      this.error("MK3410", `enum '${sym.name}' is not a value; use one of its variants, e.g. ${sym.name}.${first}`, node.span);
+    }
     return sym.type;
   }
 
@@ -639,7 +792,7 @@ export class Analyzer {
       // The right side runs only sometimes: a `consume` there is a "maybe" move.
       const before = this.moves;
       this.moves = new Map(before);
-      right = this.expr(node.right);
+      right = this.blocked(`the right side of '${node.operator}'`, () => this.expr(node.right));
       this.moves = mergeMoves(before, this.moves);
     } else {
       right = this.expr(node.right);
@@ -682,6 +835,8 @@ export class Analyzer {
         return BOOL;
       case "&&":
       case "||":
+        // `cond && <p>...</p>` renders the markup only when cond holds.
+        if (op === "&&" && r.kind === "markup") return MARKUP;
         for (const [side, t] of [[node.left, l], [node.right, r]] as const) {
           if (!isUnknown(t) && t.kind !== "bool") this.error("MK3101", `operator '${op}' expects 'bool' operands, found '${typeToString(t)}'`, side.span);
         }
@@ -751,6 +906,8 @@ export class Analyzer {
       }
       // Reassigning a consumed `var` gives it a fresh, owned value.
       this.moves.delete(sym);
+      if (value.kind !== "optional" && value.kind !== "null" && sym.type.kind === "optional") this.narrowed.set(sym, sym.type.inner);
+      else this.narrowed.delete(sym);
     } else {
       const op = node.operator[0] as AST.BinaryOperator;
       this.binaryType({ kind: "BinaryExpression", operator: op, left: target, right: node.value, span: node.span }, sym.type, value);
@@ -765,6 +922,7 @@ export class Analyzer {
     let foreign = false;
     let result: Type = ANY;
     let calleeName = "function";
+    let variant: VariantInfo | undefined;
 
     if (callee.kind === "Identifier") {
       calleeName = callee.name;
@@ -777,6 +935,7 @@ export class Analyzer {
         if (sym.fn) target = sym.fn;
         else if (sym.builtin) builtin = sym.builtin;
         else if (sym.kind === "import") foreign = true;
+        else if (sym.kind === "variant") variant = sym.variant;
         else if (sym.kind === "model") this.error("MK3411", `model '${sym.name}' is not callable; use 'insert ${sym.name} { ... }'`, callee.span);
         if (sym.type.kind === "fn") result = sym.type.returns;
         const isClass = /^[A-Z]/.test(sym.name);
@@ -793,7 +952,25 @@ export class Analyzer {
       if (root && this.resolutions.get(root)?.kind === "import") foreign = true;
     }
 
-    const argTypes = node.args.map((a) => this.expr(a));
+    const argTypes: Type[] = [];
+    for (const arg of node.args) {
+      if (builtin?.higherOrder && arg.kind === "LambdaExpression") this.lambdaHint = hofHint(builtin.name, argTypes);
+      argTypes.push(this.expr(arg));
+      this.lambdaHint = undefined;
+    }
+
+    if (variant) {
+      const n = variant.fields.length;
+      if (n === 0) this.error("MK3411", `variant '${variant.name}' has no fields; write '${variant.name}' without parentheses`, node.span);
+      else this.checkArity(node, variant.name, n, n);
+      variant.fields.forEach((field, i) => {
+        const arg = node.args[i];
+        if (arg && !isAssignable(argTypes[i]!, field.type)) {
+          this.error("MK3110", `argument of type '${typeToString(argTypes[i]!)}' is not assignable to field '${field.name}: ${typeToString(field.type)}'`, arg.span);
+        }
+      });
+      return { kind: "enum", name: variant.enumName };
+    }
 
     if (target) {
       this.checkArity(node, calleeName, target.params.filter((p) => !p.optional).length, target.params.length);
@@ -812,6 +989,27 @@ export class Analyzer {
     if (builtin) {
       if (builtin.kind === "function") this.checkArity(node, builtin.name, builtin.minArgs ?? 0, builtin.maxArgs);
       if (builtin.async) this.markAwait(node);
+      if (builtin.name === "Ok") return { kind: "result", ok: argTypes[0] ?? VOID, err: ANY };
+      if (builtin.name === "Err") return { kind: "result", ok: ANY, err: argTypes[0] ?? ANY };
+      if (builtin.higherOrder) {
+        const fnArg = node.args[node.args.length - 1];
+        const info =
+          fnArg?.kind === "LambdaExpression"
+            ? this.lambdaInfos.get(fnArg)
+            : fnArg?.kind === "Identifier"
+              ? this.resolutions.get(fnArg)?.fn
+              : undefined;
+        if (info) {
+          this.ctx.info.callees.add(info);
+          this.hofSites.push({ call: node, info });
+        }
+        return hofResult(builtin.name, argTypes, info);
+      }
+      if (builtin.name === "sum") {
+        const list = argTypes[0];
+        return list?.kind === "list" && isNumeric(list.element) ? list.element : ANY;
+      }
+      if (builtin.name === "take") return argTypes[0] ?? ANY;
       return builtin.type.kind === "fn" ? builtin.type.returns : ANY;
     }
     // Calls into foreign (non-MK) modules may return promises; awaiting a plain value is harmless.
@@ -862,7 +1060,13 @@ export class Analyzer {
   }
 
   private lambda(node: AST.LambdaExpression): Type {
-    const params = node.params.map((p) => this.paramInfo(p));
+    const hint = this.lambdaHint;
+    this.lambdaHint = undefined;
+    const params = node.params.map((p, i) => {
+      const info = this.paramInfo(p);
+      if (!p.type && hint?.[i]) info.type = hint[i]!;
+      return info;
+    });
     const declared = node.returnType ? this.resolveType(node.returnType) : undefined;
     const info = this.newInfo("<lambda>", params, declared ?? ANY);
     this.lambdaInfos.set(node, info);
@@ -951,6 +1155,10 @@ export class Analyzer {
   // -------------------------------------------------------------------------
 
   private query(node: AST.QueryExpression): Type {
+    if (node.live && !this.allowLive) {
+      this.error("MK3801", "a live query must initialize a signal: 'signal name = live query ...'", node.span);
+    }
+    this.allowLive = false;
     this.ctx.info.directAsync = true;
     const model = this.resolveModel(node.model);
     if (node.where) this.predicate(node.where, model, "where");
@@ -1061,6 +1269,7 @@ export class Analyzer {
         const l = this.predicate(node.left, model, clause);
         const r = this.predicate(node.right, model, clause);
         const column = l.column || r.column;
+        this.warnSelfComparison(node, model);
         if (column && node.operator === "??") {
           this.error("MK3306", "'??' cannot be used with columns inside a query", node.span);
         }
@@ -1103,12 +1312,29 @@ export class Analyzer {
     }
   }
 
+  /** `where id == id` with a parameter named `id`: both sides are the column, so it's always true. */
+  private warnSelfComparison(node: AST.BinaryExpression, model: ModelInfo): void {
+    const { left, right } = node;
+    if (left.kind !== "Identifier" || right.kind !== "Identifier" || left.name !== right.name) return;
+    if (left.queryRole !== "column" || right.queryRole !== "column") return;
+    const hidden = this.scope.lookup(left.name);
+    if (!hidden || !VALUE_KINDS.has(hidden.kind)) return;
+    this.diagnostics.warning(
+      "MK3308",
+      `this compares the column ${model.name}.${left.name} with itself; inside a query '${left.name}' always means the column`,
+      node.span,
+      [{ message: `rename the ${kindName(hidden.kind)} '${left.name}' (declared here) to compare against it`, span: hidden.span }],
+    );
+  }
+
   /**
    * With a declared schema, field names are columns and shadow outer names (like SQL).
    * Without one, function-local names are host values and anything else is a column.
    */
   private classify(node: AST.Identifier, model: ModelInfo): AST.QueryRole {
-    if (model.fields) return model.fields.has(node.name) ? "column" : "host";
+    if (model.fields) {
+      return model.fields.has(node.name) ? "column" : "host";
+    }
     const sym = this.scope.lookup(node.name);
     if (!sym) return "column";
     // Signal initializers, effects and tasks belong to the function (or module) around them.
@@ -1117,6 +1343,334 @@ export class Analyzer {
     const moduleLevel = sym.context?.kind === "module";
     if (moduleLevel && home.kind !== "module" && VALUE_KINDS.has(sym.kind)) return "column";
     return "host";
+  }
+
+  // -------------------------------------------------------------------------
+  // match, ?, enums
+  // -------------------------------------------------------------------------
+
+  private matchExpression(node: AST.MatchExpression): Type {
+    if (this.lowerBlocked) {
+      this.error("MK3705", `'match' can't be used in ${this.lowerBlocked}; store its result in a variable first`, node.span);
+    }
+    const subject = this.expr(node.subject);
+    const base = subject.kind === "optional" ? subject.inner : subject;
+    const enumInfo = base.kind === "enum" ? this.enums.get(base.name) : base.kind === "result" ? RESULT_ENUM : undefined;
+
+    const unguarded: AST.Pattern[] = [];
+    let resultType: Type | undefined;
+    const before = this.moves;
+    const outcomes: { moves: MoveState; exits: boolean }[] = [];
+
+    for (const arm of node.arms) {
+      this.moves = new Map(before);
+      const exits = this.withScope(() => {
+        this.bindPattern(arm.pattern, subject);
+        if (arm.guard) this.blocked("a match guard", () => this.condition(arm.guard!));
+        else unguarded.push(arm.pattern);
+
+        let armType: Type;
+        let armExits = false;
+        if (arm.body.kind === "BlockStatement") {
+          const value = this.blockValue(arm.body);
+          armType = value.type;
+          armExits = value.exits;
+        } else {
+          armType = this.expr(arm.body);
+        }
+        if (!armExits) {
+          if (!resultType || resultType.kind === "any" || resultType.kind === "null") resultType = armType.kind === "null" && resultType ? optional(resultType) : armType;
+          else if (armType.kind === "null") resultType = optional(resultType);
+          else if (!isAssignable(armType, resultType) && !isAssignable(resultType, armType)) {
+            this.error("MK3104", `this arm produces '${typeToString(armType)}' but earlier arms produce '${typeToString(resultType)}'`, arm.body.span);
+          }
+        }
+        return armExits;
+      });
+      outcomes.push({ moves: this.moves, exits });
+    }
+
+    const flowing = outcomes.filter((o) => !o.exits);
+    this.moves = flowing.length ? flowing.map((o) => o.moves).reduce(mergeMoves) : before;
+
+    if (!this.covers(unguarded, subject)) {
+      const missing = enumInfo ? [...enumInfo.variants.values()].filter((v) => !this.coversVariant(unguarded, v, base)).map((v) => v.name) : [];
+      if (missing.length) {
+        this.error("MK3703", `non-exhaustive match: ${missing.join(", ")} not fully handled`, node.span, [
+          { message: "add the missing arms, or a '_ => ...' arm to handle the rest" },
+        ]);
+      } else {
+        this.error("MK3703", `non-exhaustive match on '${typeToString(subject)}': add a '_ => ...' arm`, node.span);
+      }
+    }
+    return resultType ?? VOID;
+  }
+
+  /** Do these (unguarded) patterns match every value of `type`? Conservative for multi-field variants. */
+  private covers(patterns: AST.Pattern[], type: Type): boolean {
+    if (patterns.some((p) => p.kind === "WildcardPattern" || p.kind === "BindingPattern")) return true;
+    const base = type.kind === "optional" ? type.inner : type;
+    if (type.kind === "optional" && !patterns.some((p) => p.kind === "LiteralPattern" && p.value.kind === "NullLiteral")) return false;
+    if (base.kind === "bool") {
+      const values = new Set(patterns.flatMap((p) => (p.kind === "LiteralPattern" && p.value.kind === "BooleanLiteral" ? [p.value.value] : [])));
+      return values.has(true) && values.has(false);
+    }
+    const info = this.enumOf(base);
+    return !!info && [...info.variants.values()].every((v) => this.coversVariant(patterns, v, base));
+  }
+
+  private coversVariant(patterns: AST.Pattern[], variant: VariantInfo, base: Type): boolean {
+    if (patterns.some((p) => p.kind === "WildcardPattern" || p.kind === "BindingPattern")) return true;
+    const same = patterns.filter((p): p is AST.VariantPattern => p.kind === "VariantPattern" && p.name === variant.name);
+    const fields = this.variantFields(variant, base);
+    if (!same.length) return false;
+    if (fields.length === 0) return true;
+    if (same.some((p) => p.args.every((a) => a.kind === "WildcardPattern" || a.kind === "BindingPattern"))) return true;
+    return fields.length === 1 && this.covers(same.map((p) => p.args[0]!).filter(Boolean), fields[0]!.type);
+  }
+
+  private enumOf(t: Type): EnumInfo | undefined {
+    return t.kind === "enum" ? this.enums.get(t.name) : t.kind === "result" ? RESULT_ENUM : undefined;
+  }
+
+  /** A variant's fields, with `Result`'s generic payload types filled in from the subject. */
+  private variantFields(variant: VariantInfo, base: Type): VariantInfo["fields"] {
+    if (base.kind !== "result" || variant.enumName !== "Result") return variant.fields;
+    return [{ name: variant.fields[0]!.name, type: variant.name === "Ok" ? base.ok : base.err }];
+  }
+
+  /** Checks a pattern against the subject's type and declares the names it binds. */
+  private bindPattern(pattern: AST.Pattern, subject: Type): void {
+    const base = subject.kind === "optional" ? subject.inner : subject;
+    switch (pattern.kind) {
+      case "WildcardPattern":
+        return;
+      case "BindingPattern":
+        this.declare(this.symbol(pattern.name, "variable", subject, pattern.span));
+        return;
+      case "LiteralPattern": {
+        const t = this.expr(pattern.value);
+        if (!isComparable(t, subject)) {
+          this.error("MK3102", `pattern of type '${typeToString(t)}' can never match a '${typeToString(subject)}'`, pattern.span);
+        }
+        return;
+      }
+      case "VariantPattern": {
+        let info = this.enumOf(base);
+        if (!info) {
+          const sym = this.scope.lookup(pattern.name);
+          if (sym?.kind === "variant") info = this.enums.get(sym.variant!.enumName);
+          else if (pattern.name === "Ok" || pattern.name === "Err") info = RESULT_ENUM;
+          if (info && !isUnknown(base)) {
+            this.error("MK3706", `can't match variant '${pattern.name}' against a value of type '${typeToString(subject)}'`, pattern.span);
+          }
+        }
+        const variant = info?.variants.get(pattern.name);
+        if (!variant) {
+          const where = info ? `enum '${info.name}'` : "scope";
+          this.error("MK3702", `no variant named '${pattern.name}' in ${where}`, pattern.span);
+          for (const arg of pattern.args) this.bindPattern(arg, ANY);
+          return;
+        }
+        const fields = this.variantFields(variant, base);
+        if (pattern.args.length !== fields.length) {
+          this.error(
+            "MK3707",
+            `'${variant.name}' has ${fields.length} field${fields.length === 1 ? "" : "s"}, but the pattern has ${pattern.args.length}`,
+            pattern.span,
+          );
+        }
+        pattern.fieldNames = fields.map((f) => f.name);
+        pattern.args.forEach((arg, i) => this.bindPattern(arg, fields[i]?.type ?? ANY));
+      }
+    }
+  }
+
+  /** A block used as a value: its last expression statement is the value. */
+  private blockValue(block: AST.BlockStatement): { type: Type; exits: boolean } {
+    return this.withScope(() => {
+      this.declareHoisted(block.body.filter((s) => s.kind === "FunctionDeclaration" || s.kind === "EnumDeclaration"));
+      const last = block.body[block.body.length - 1];
+      if (last?.kind !== "ExpressionStatement") return { type: VOID, exits: this.statements(block.body) };
+      const exits = this.statements(block.body.slice(0, -1));
+      return { type: this.expr(last.expression), exits };
+    });
+  }
+
+  private tryExpression(node: AST.TryExpression): Type {
+    if (this.lowerBlocked) {
+      this.error("MK3705", `'?' can't be used in ${this.lowerBlocked}; store the result in a variable first`, node.span);
+    }
+    const t = this.expr(node.operand);
+    if (!isUnknown(t) && t.kind !== "result") {
+      this.error("MK3708", `'?' needs a Result, but this is '${typeToString(t)}'`, node.operand.span);
+    }
+    const fn = this.ctx;
+    if (fn.kind !== "function" && fn.kind !== "lambda") {
+      this.error("MK3704", "'?' can only be used inside a function, where it can return the error", node.span);
+    } else if (fn.returnType && !isUnknown(fn.returnType) && fn.returnType.kind !== "result") {
+      this.error("MK3704", `'?' returns early with an Err, but this function returns '${typeToString(fn.returnType)}', not a Result`, node.span);
+    }
+    return t.kind === "result" ? t.ok : ANY;
+  }
+
+  /** `Shape.Circle` — a variant reached through its enum. */
+  private enumMember(node: AST.MemberExpression): Type | undefined {
+    if (node.object.kind !== "Identifier") return undefined;
+    const sym = this.scope.lookup(node.object.name);
+    if (sym?.kind !== "enum") return undefined;
+    this.resolutions.set(node.object, sym);
+    const variant = sym.enumInfo!.variants.get(node.property);
+    if (!variant) {
+      const hint = suggest(node.property, sym.enumInfo!.variants.keys());
+      this.error("MK3702", `enum '${sym.name}' has no variant '${node.property}'${hint ? ` — did you mean '${hint}'?` : ""}`, node.propertySpan);
+      return ANY;
+    }
+    const enumType: Type = { kind: "enum", name: variant.enumName };
+    return variant.fields.length ? { kind: "fn", params: variant.fields.map((f) => f.type), returns: enumType } : enumType;
+  }
+
+  private blocked<T>(reason: string, fn: () => T): T {
+    const saved = this.lowerBlocked;
+    this.lowerBlocked = reason;
+    try {
+      return fn();
+    } finally {
+      this.lowerBlocked = saved;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Views, markup, live queries, routes
+  // -------------------------------------------------------------------------
+
+  private viewBody(node: AST.FunctionDeclaration): void {
+    const body = node.body.body;
+    this.declareHoisted(body.filter((s) => s.kind === "FunctionDeclaration" || s.kind === "EnumDeclaration"));
+    const last = body[body.length - 1];
+    if (last?.kind !== "ExpressionStatement") {
+      this.statements(body);
+      this.error("MK4004", `view '${node.name}' must end with the markup it renders, e.g. <div>...</div>`, node.nameSpan);
+      return;
+    }
+    this.statements(body.slice(0, -1));
+    const t = this.expr(last.expression);
+    if (!isUnknown(t) && t.kind !== "markup") {
+      this.error("MK4004", `view '${node.name}' must end with markup, but its last expression is '${typeToString(t)}'`, last.span);
+    }
+  }
+
+  private markupElement(node: AST.MarkupElement): Type {
+    if (/^[A-Z]/.test(node.tag)) {
+      this.component(node);
+    } else {
+      for (const attr of node.attributes) {
+        if (attr.value === true || attr.value.kind === "StringLiteral") continue;
+        const value = attr.value;
+        if (attr.name.startsWith("on:")) {
+          const info = this.newInfo(`<${attr.name}>`, [], ANY);
+          this.withContext("lambda", info, undefined, () => this.expr(value));
+          this.asyncNodes.push({ node: attr, info });
+        } else if (attr.name.startsWith("bind:")) {
+          const sym = value.kind === "Identifier" ? this.lookup(value.name, value.span) : undefined;
+          if (value.kind === "Identifier" && sym) this.resolutions.set(value, sym);
+          if (!sym || sym.kind !== "signal" || sym.derived) {
+            this.error("MK4003", `'${attr.name}' needs a writable signal, e.g. ${attr.name}={name}`, attr.span);
+          }
+        } else {
+          this.hole(value, `attribute '${attr.name}'`);
+        }
+      }
+    }
+    for (const child of node.children) {
+      if (child.kind === "MarkupText") continue;
+      if (child.kind === "MarkupElement") this.markupElement(child);
+      else this.hole(child, "markup");
+    }
+    return MARKUP;
+  }
+
+  /** `{expr}` in markup re-runs when the signals it reads change, so it must stay synchronous. */
+  private hole(expr: AST.Expression, where: string): void {
+    const info = this.newInfo(`<${where}>`, [], ANY);
+    this.withContext("computed", info, undefined, () => this.expr(expr));
+    this.syncOnly.push({ info, span: expr.span, message: `${where} expressions re-render on change and can't perform I/O; load the data into a signal first` });
+  }
+
+  private component(node: AST.MarkupElement): void {
+    node.component = true;
+    const sym = this.lookup(node.tag, node.span);
+    for (const attr of node.attributes) if (attr.value !== true) this.expr(attr.value);
+    if (!sym?.fn) {
+      if (sym && sym.kind !== "import") this.error("MK4002", `'${node.tag}' is not a view`, node.span);
+      return;
+    }
+    const params = sym.fn.params;
+    for (const attr of node.attributes) {
+      const param = params.find((p) => p.name === attr.name);
+      if (!param) {
+        const hint = suggest(attr.name, params.map((p) => p.name));
+        this.error("MK4002", `view '${node.tag}' has no prop '${attr.name}'${hint ? ` — did you mean '${hint}'?` : ""}`, attr.span);
+      }
+    }
+    for (const param of params) {
+      if (!param.optional && !node.attributes.some((a) => a.name === param.name)) {
+        this.error("MK4002", `view '${node.tag}' needs the prop '${param.name}'`, node.span);
+      }
+    }
+    this.ctx.info.callees.add(sym.fn);
+    this.syncOnly.push({ info: sym.fn, span: node.span, message: `view '${node.tag}' performs I/O, so it can't render synchronously` });
+  }
+
+  /** `signal x = live query ...` — re-runs when the signals it reads or its table change. */
+  private liveSignal(node: AST.SignalDeclaration, query: AST.QueryExpression): void {
+    const info = this.newInfo(`<live ${node.name}>`, [], ANY);
+    let initType: Type = ANY;
+    this.withContext("computed", info, undefined, () => {
+      this.allowLive = true;
+      initType = this.expr(query);
+    });
+    node.derived = true;
+    // Outside views the first result is awaited, so the signal is never observed empty.
+    query.liveAwait = !this.inView();
+    if (query.liveAwait) this.ctx.info.directAsync = true;
+    const type = this.checkInitializer(node.name, node.type, initType, query);
+    this.declare(this.symbol(node.name, "signal", type, node.nameSpan, { derived: true, exported: node.exported }));
+  }
+
+  private inView(): boolean {
+    for (let c: Context | undefined = this.ctx; c; c = c.parent) {
+      if (c.view) return true;
+      if (c.kind === "function" || c.kind === "module") return false;
+    }
+    return false;
+  }
+
+  private routeDeclaration(node: AST.RouteDeclaration): void {
+    const key = `${node.method} ${node.path}`;
+    if (this.routes.has(key)) this.error("MK3902", `duplicate route ${key}`, node.pathSpan);
+    this.routes.add(key);
+    const params = node.params.map((p) => this.paramInfo(p));
+    for (const m of node.path.matchAll(/:([A-Za-z_]\w*)/g)) {
+      if (!params.some((p) => p.name === m[1])) {
+        this.error("MK3901", `path parameter ':${m[1]}' has no matching parameter; add '${m[1]}: string' to the route`, node.pathSpan);
+      }
+    }
+    const declared = node.returnType ? this.resolveType(node.returnType) : undefined;
+    const info = this.newInfo(key, params, declared ?? ANY);
+    this.withContext(
+      "function",
+      info,
+      declared,
+      () => {
+        this.declareParams(node.params, params);
+        const terminates = this.blockBody(node.body);
+        if (declared && !["void", "any", "optional"].includes(declared.kind) && !terminates) {
+          this.error("MK3105", `route ${key} must return a value of type '${typeToString(declared)}' on every path`, node.pathSpan);
+        }
+      },
+      false,
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -1179,6 +1733,8 @@ export class Analyzer {
       }
     }
     for (const { call, target } of this.callSites) call.await = target.isAsync;
+    for (const { call, info } of this.hofSites) if (info.isAsync) call.await = true;
+    for (const { info, span, message } of this.syncOnly) if (info.isAsync) this.error("MK4001", message, span);
     for (const { node, info } of this.asyncNodes) node.isAsync = info.isAsync;
     for (const node of this.defaultValueIO) {
       if (node.kind !== "CallExpression" || node.await) {
@@ -1219,6 +1775,10 @@ export class Analyzer {
         case "model":
           exports.set(sym.name, { kind: "model", fields: sym.model?.fields });
           break;
+        case "enum":
+          exports.set(sym.name, { kind: "enum", info: sym.enumInfo! });
+          for (const variant of sym.enumInfo!.variants.values()) exports.set(variant.name, { kind: "variant", variant });
+          break;
       }
     }
     return { exports };
@@ -1230,11 +1790,14 @@ export class Analyzer {
 
   private withScope<T>(fn: () => T): T {
     const saved = this.scope;
+    const savedNarrowed = this.narrowed;
     this.scope = new Scope(saved);
+    this.narrowed = new Map(savedNarrowed);
     try {
       return fn();
     } finally {
       this.scope = saved;
+      this.narrowed = savedNarrowed;
     }
   }
 
@@ -1244,12 +1807,13 @@ export class Analyzer {
    * inside the body don't leak out — except moves into a spawned task, returned via `escapes`.
    */
   private withContext<T>(kind: ContextKind, info: FunctionInfo, returnType: Type | undefined, fn: () => T, inheritMoves = true): T {
-    const saved = { ctx: this.ctx, scope: this.scope, moves: this.moves, inDefaultValue: this.inDefaultValue };
+    const saved = { ctx: this.ctx, scope: this.scope, moves: this.moves, inDefaultValue: this.inDefaultValue, lowerBlocked: this.lowerBlocked };
     this.ctx = this.newContext(kind, info, saved.ctx);
     this.ctx.returnType = returnType;
     this.scope = new Scope(saved.scope);
     this.moves = inheritMoves ? new Map(saved.moves) : new Map();
     this.inDefaultValue = false;
+    this.lowerBlocked = undefined;
     try {
       return fn();
     } finally {
@@ -1257,6 +1821,7 @@ export class Analyzer {
       this.scope = saved.scope;
       this.moves = saved.moves;
       this.inDefaultValue = saved.inDefaultValue;
+      this.lowerBlocked = saved.lowerBlocked;
     }
   }
 
@@ -1316,6 +1881,34 @@ function mergeMoves(a: MoveState, b: MoveState): MoveState {
   for (const [sym, move] of a) out.set(sym, { span: move.span, certain: move.certain && b.get(sym)?.certain === true });
   for (const [sym, move] of b) if (!a.has(sym)) out.set(sym, { span: move.span, certain: false });
   return out;
+}
+
+/** Parameter types to give an unannotated lambda passed to a collection function. */
+function hofHint(name: string, argTypes: Type[]): Type[] {
+  const list = argTypes[0];
+  const element = list?.kind === "list" ? list.element : ANY;
+  return name === "reduce" ? [argTypes[1] ?? ANY, element] : [element];
+}
+
+function hofResult(name: string, argTypes: Type[], fn: FunctionInfo | undefined): Type {
+  const list = argTypes[0];
+  const element = list?.kind === "list" ? list.element : ANY;
+  switch (name) {
+    case "map":
+      return { kind: "list", element: fn?.returns ?? ANY };
+    case "filter":
+    case "sortBy":
+      return list?.kind === "list" ? list : ANY;
+    case "find":
+      return optional(element);
+    case "reduce":
+      return argTypes[1] ?? ANY;
+    case "some":
+    case "every":
+      return BOOL;
+    default:
+      return VOID;
+  }
 }
 
 function rootIdentifier(expr: AST.Expression): AST.Identifier | undefined {

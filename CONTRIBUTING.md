@@ -35,7 +35,7 @@ in `test/codegen.test.ts` ("Generated programs run") if the feature changes runt
 
 Error codes are grouped by stage, and each code is used for one thing only:
 
-- `MK1xxx`: lexer
+- `MK1xxx`: lexer, including markup
 - `MK2xxx`: parser
 - `MK30xx`: ownership (`consume`)
 - `MK31xx`: types
@@ -44,6 +44,10 @@ Error codes are grouped by stage, and each code is used for one thing only:
 - `MK34xx`: names and scopes
 - `MK35xx`: modules
 - `MK36xx`: warnings
+- `MK37xx`: `match`, enums and `?`
+- `MK38xx`: live queries
+- `MK39xx`: routes
+- `MK40xx`: views and markup
 
 A good error message:
 

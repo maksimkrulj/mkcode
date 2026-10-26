@@ -2,26 +2,60 @@
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
   "name": "MK",
   "scopeName": "source.mk",
-  "fileTypes": ["mk"],
-  "patterns": [{ "include": "#code" }],
+  "fileTypes": [
+    "mk"
+  ],
+  "patterns": [
+    {
+      "include": "#code"
+    }
+  ],
   "repository": {
     "code": {
       "patterns": [
-        { "include": "#comments" },
-        { "include": "#strings" },
-        { "include": "#database" },
-        { "include": "#declarations" },
-        { "include": "#keywords" },
-        { "include": "#types" },
-        { "include": "#numbers" },
-        { "include": "#calls" },
-        { "include": "#operators" }
+        {
+          "include": "#comments"
+        },
+        {
+          "include": "#strings"
+        },
+        {
+          "include": "#markup"
+        },
+        {
+          "include": "#database"
+        },
+        {
+          "include": "#declarations"
+        },
+        {
+          "include": "#keywords"
+        },
+        {
+          "include": "#types"
+        },
+        {
+          "include": "#numbers"
+        },
+        {
+          "include": "#calls"
+        },
+        {
+          "include": "#operators"
+        }
       ]
     },
     "comments": {
       "patterns": [
-        { "name": "comment.line.double-slash.mk", "match": "//.*$" },
-        { "name": "comment.block.mk", "begin": "/\\*", "end": "\\*/" }
+        {
+          "name": "comment.line.double-slash.mk",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.mk",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
       ]
     },
     "strings": {
@@ -29,91 +63,219 @@
       "begin": "\"",
       "end": "\"",
       "patterns": [
-        { "name": "constant.character.escape.mk", "match": "\\\\(?:[ntr0\\\\\"'$]|u\\{[0-9A-Fa-f]{1,6}\\})" },
+        {
+          "name": "constant.character.escape.mk",
+          "match": "\\\\(?:[ntr0\\\\\"'$]|u\\{[0-9A-Fa-f]{1,6}\\})"
+        },
         {
           "name": "meta.embedded.interpolation.mk",
           "begin": "\\$\\{",
           "end": "\\}",
-          "beginCaptures": { "0": { "name": "punctuation.section.interpolation.begin.mk" } },
-          "endCaptures": { "0": { "name": "punctuation.section.interpolation.end.mk" } },
-          "patterns": [{ "include": "#code" }]
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.section.interpolation.begin.mk"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.interpolation.end.mk"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#code"
+            }
+          ]
         }
       ]
     },
     "database": {
       "patterns": [
         {
+          "name": "keyword.other.query.mk",
+          "match": "\blive(?=s+query\b)"
+        },
+        {
           "match": "\\b(query)\\s+(?:(first|count)\\s+)?([A-Z]\\w*)",
           "captures": {
-            "1": { "name": "keyword.other.query.mk" },
-            "2": { "name": "keyword.other.query.mk" },
-            "3": { "name": "entity.name.type.model.mk" }
+            "1": {
+              "name": "keyword.other.query.mk"
+            },
+            "2": {
+              "name": "keyword.other.query.mk"
+            },
+            "3": {
+              "name": "entity.name.type.model.mk"
+            }
           }
         },
         {
           "match": "\\b(insert|update|delete)\\s+([A-Z]\\w*)",
           "captures": {
-            "1": { "name": "keyword.other.query.mk" },
-            "2": { "name": "entity.name.type.model.mk" }
+            "1": {
+              "name": "keyword.other.query.mk"
+            },
+            "2": {
+              "name": "entity.name.type.model.mk"
+            }
           }
         },
-        { "name": "keyword.other.query.mk", "match": "\\b(where|order\\s+by|asc|desc|limit|offset|select|set)\\b" }
+        {
+          "name": "keyword.other.query.mk",
+          "match": "\\b(where|order\\s+by|asc|desc|limit|offset|select|set)\\b"
+        }
       ]
     },
     "declarations": {
       "patterns": [
         {
+          "match": "\b(view)s+([A-Z]w*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.view.mk"
+            },
+            "2": {
+              "name": "entity.name.type.view.mk"
+            }
+          }
+        },
+        {
+          "match": "\b(enum)s+([A-Z]w*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.enum.mk"
+            },
+            "2": {
+              "name": "entity.name.type.enum.mk"
+            }
+          }
+        },
+        {
+          "match": "\b(route)s+(GET|POST|PUT|PATCH|DELETE)\b",
+          "captures": {
+            "1": {
+              "name": "storage.type.route.mk"
+            },
+            "2": {
+              "name": "constant.language.http-method.mk"
+            }
+          }
+        },
+        {
+          "match": "\b(test)(?=s+\")",
+          "captures": {
+            "1": {
+              "name": "storage.type.test.mk"
+            }
+          }
+        },
+        {
           "match": "\\b(fn)\\s+([A-Za-z_]\\w*)",
           "captures": {
-            "1": { "name": "storage.type.function.mk" },
-            "2": { "name": "entity.name.function.mk" }
+            "1": {
+              "name": "storage.type.function.mk"
+            },
+            "2": {
+              "name": "entity.name.function.mk"
+            }
           }
         },
         {
           "match": "\\b(model)\\s+([A-Z]\\w*)",
           "captures": {
-            "1": { "name": "storage.type.model.mk" },
-            "2": { "name": "entity.name.type.model.mk" }
+            "1": {
+              "name": "storage.type.model.mk"
+            },
+            "2": {
+              "name": "entity.name.type.model.mk"
+            }
           }
         },
         {
           "match": "\\b(signal)\\s+([A-Za-z_]\\w*)",
           "captures": {
-            "1": { "name": "storage.type.signal.mk" },
-            "2": { "name": "variable.other.signal.mk" }
+            "1": {
+              "name": "storage.type.signal.mk"
+            },
+            "2": {
+              "name": "variable.other.signal.mk"
+            }
           }
         },
         {
           "match": "\\b(let|var)\\s+([A-Za-z_]\\w*)",
           "captures": {
-            "1": { "name": "storage.type.mk" },
-            "2": { "name": "variable.other.declaration.mk" }
+            "1": {
+              "name": "storage.type.mk"
+            },
+            "2": {
+              "name": "variable.other.declaration.mk"
+            }
           }
         },
         {
           "match": "\\b(consume)\\s+([A-Za-z_]\\w*)",
           "captures": {
-            "1": { "name": "storage.modifier.ownership.mk" },
-            "2": { "name": "variable.parameter.mk" }
+            "1": {
+              "name": "storage.modifier.ownership.mk"
+            },
+            "2": {
+              "name": "variable.parameter.mk"
+            }
           }
         },
-        { "name": "storage.type.function.mk", "match": "\\bfn\\b" }
+        {
+          "name": "storage.type.function.mk",
+          "match": "\\bfn\\b"
+        }
       ]
     },
     "keywords": {
       "patterns": [
-        { "name": "keyword.control.mk", "match": "\\b(if|else|while|for|in|break|continue|return)\\b" },
-        { "name": "keyword.control.import.mk", "match": "\\b(import|export|from|as)\\b" },
-        { "name": "keyword.other.reactive.mk", "match": "\\b(effect|spawn)\\b" },
-        { "name": "storage.modifier.ownership.mk", "match": "\\bconsume\\b" },
-        { "name": "constant.language.mk", "match": "\\b(true|false|null)\\b" }
+        {
+          "name": "keyword.control.mk",
+          "match": "\b(match|assert)\b"
+        },
+        {
+          "name": "storage.type.enum.mk",
+          "match": "\benum\b"
+        },
+        {
+          "name": "keyword.control.mk",
+          "match": "\\b(if|else|while|for|in|break|continue|return)\\b"
+        },
+        {
+          "name": "keyword.control.import.mk",
+          "match": "\\b(import|export|from|as)\\b"
+        },
+        {
+          "name": "keyword.other.reactive.mk",
+          "match": "\\b(effect|spawn)\\b"
+        },
+        {
+          "name": "storage.modifier.ownership.mk",
+          "match": "\\bconsume\\b"
+        },
+        {
+          "name": "constant.language.mk",
+          "match": "\\b(true|false|null)\\b"
+        }
       ]
     },
     "types": {
       "patterns": [
-        { "name": "support.type.primitive.mk", "match": "\\b(int|float|string|bool|void|any)\\b" },
-        { "name": "support.type.builtin.mk", "match": "\\b(List|Map|Task)\\b" },
-        { "name": "entity.name.type.mk", "match": "\\b[A-Z]\\w*\\b" }
+        {
+          "name": "support.type.primitive.mk",
+          "match": "\\b(int|float|string|bool|void|any)\\b"
+        },
+        {
+          "name": "support.type.builtin.mk",
+          "match": "\\b(List|Map|Task)\\b"
+        },
+        {
+          "name": "entity.name.type.mk",
+          "match": "\\b[A-Z]\\w*\\b"
+        }
       ]
     },
     "numbers": {
@@ -124,16 +286,74 @@
       "patterns": [
         {
           "name": "support.function.builtin.mk",
-          "match": "\\b(print|len|str|int|float|now|panic|keys|sleep|fetch|fetchJson|fetchText|readFile|writeFile|join|batch|untrack|isNull)(?=\\s*\\()"
+          "match": "\\b(print|len|str|int|float|now|panic|keys|sleep|fetch|fetchJson|fetchText|readFile|writeFile|join|batch|untrack|isNull|map|filter|reduce|each|find|some|every|sortBy|sum|take|request|serve|mount|renderToString|Ok|Err)(?=\\s*\\()"
         },
-        { "name": "entity.name.function.call.mk", "match": "\\b[a-z_]\\w*(?=\\s*\\()" }
+        {
+          "name": "entity.name.function.call.mk",
+          "match": "\\b[a-z_]\\w*(?=\\s*\\()"
+        }
       ]
     },
     "operators": {
       "patterns": [
-        { "name": "keyword.operator.arrow.mk", "match": "->|=>" },
-        { "name": "keyword.operator.range.mk", "match": "\\.\\." },
-        { "name": "keyword.operator.mk", "match": "==|!=|<=|>=|&&|\\|\\||\\?\\?|\\?\\.|[-+*/%]=?|[<>!=?]" }
+        {
+          "name": "keyword.operator.pipe.mk",
+          "match": "|>"
+        },
+        {
+          "name": "keyword.operator.arrow.mk",
+          "match": "->|=>"
+        },
+        {
+          "name": "keyword.operator.range.mk",
+          "match": "\\.\\."
+        },
+        {
+          "name": "keyword.operator.mk",
+          "match": "==|!=|<=|>=|&&|\\|\\||\\?\\?|\\?\\.|[-+*/%]=?|[<>!=?]"
+        }
+      ]
+    },
+    "markup": {
+      "patterns": [
+        {
+          "begin": "(</?)([A-Za-z][w.:-]*)",
+          "end": "(/?>)",
+          "beginCaptures": {
+            "1": {
+              "name": "punctuation.definition.tag.begin.mk"
+            },
+            "2": {
+              "name": "entity.name.tag.mk"
+            }
+          },
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.definition.tag.end.mk"
+            }
+          },
+          "patterns": [
+            {
+              "name": "entity.other.attribute-name.mk",
+              "match": "\b(?:on|bind):[w-]+|\b[w-]+(?==)"
+            },
+            {
+              "name": "string.quoted.double.mk",
+              "begin": "\"",
+              "end": "\""
+            },
+            {
+              "begin": "{",
+              "end": "}",
+              "name": "meta.embedded.expression.mk",
+              "patterns": [
+                {
+                  "include": "#code"
+                }
+              ]
+            }
+          ]
+        }
       ]
     }
   }
