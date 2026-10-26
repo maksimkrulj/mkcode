@@ -1,11 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="MK logo">
-  <defs>
-    <linearGradient id="mk-bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#7c3aed"/>
-      <stop offset="1" stop-color="#06b6d4"/>
-    </linearGradient>
-  </defs>
-  <rect width="128" height="128" rx="28" fill="url(#mk-bg)"/>
+  <rect width="128" height="128" rx="28" fill="#4ade80"/>
   <!-- m -->
   <path d="M24 92V52c0-6 4-10 10-10s10 4 10 10v40M44 58c0-6 4-10 10-10s10 4 10 10v34"
         fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>

@@ -85,9 +85,9 @@ button, select, .star {
 }
 button:hover, select:hover, .star:hover { border-color: var(--accent); }
 button.primary {
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  background: #4ade80;
   border: none;
-  color: #fff;
+  color: #052e16;
   font-weight: 600;
 }
 kbd { font: 11px var(--mono); opacity: 0.75; margin-left: 4px; }
