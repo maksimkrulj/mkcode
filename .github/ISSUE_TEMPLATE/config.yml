@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Try it in the playground
+    url: https://maksimkrulj.github.io/mkcode/
+    about: Reproduce your issue in the browser and attach the share link.

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MK Playground</title>
+  <meta name="description" content="Try MK in your browser: a reactive, database-native language with implicit async and ownership checks that compiles to clean TypeScript.">
+  <meta property="og:title" content="MK Playground">
+  <meta property="og:description" content="Write MK, watch it compile to TypeScript live, and run it — no install.">
+  <link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="https://github.com/maksimkrulj/mkcode" title="MK on GitHub">
+      <img src="../assets/logo.svg" alt="" width="32" height="32">
+      <span class="name">MK</span>
+      <span class="sub">playground</span>
+    </a>
+    <p class="tagline">Reactive · database-native · implicitly async · compiles to clean TypeScript</p>
+    <div class="actions">
+      <select id="examples" aria-label="Example programs"></select>
+      <label class="toggle" title="Preload 5 rows into the User table before each run">
+        <input type="checkbox" id="seed" checked> demo DB
+      </label>
+      <button id="share" type="button">Share</button>
+      <button id="run" type="button" class="primary">▶ Run <kbd>Ctrl ⏎</kbd></button>
+      <a class="star" href="https://github.com/maksimkrulj/mkcode">★ Star</a>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <section class="pane">
+      <div class="pane-head"><span class="file">main.mk</span><span id="status" class="status"></span></div>
+      <div class="editor">
+        <pre id="highlight" class="code" aria-hidden="true"></pre>
+        <textarea id="source" class="code" spellcheck="false" autocomplete="off" autocapitalize="off"
+                  aria-label="MK source code"></textarea>
+      </div>
+      <ul id="diagnostics" class="diagnostics" aria-live="polite"></ul>
+    </section>
+
+    <section class="pane">
+      <div class="pane-head tabs" role="tablist">
+        <button role="tab" data-tab="ts" aria-selected="true">TypeScript</button>
+        <button role="tab" data-tab="js">JavaScript</button>
+        <button role="tab" data-tab="console">Console</button>
+        <button role="tab" data-tab="ast">AST</button>
+      </div>
+      <pre id="output" class="code output" tabindex="0"></pre>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

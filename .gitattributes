@@ -1,0 +1,8 @@
+* text=auto eol=lf
+
+# GitHub's linguist maps `.mk` to Makefile. Highlight MK sources with the closest grammar
+# (Rust: `fn`, `let`, `->`) and keep them out of the language statistics.
+*.mk linguist-language=Rust linguist-detectable=false
+
+*.png binary
+*.sqlite binary

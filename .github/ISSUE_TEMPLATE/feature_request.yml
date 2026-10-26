@@ -1,0 +1,25 @@
+name: Language idea
+description: Propose new syntax, a check, a runtime feature or a tooling improvement.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: example
+    attributes:
+      label: What would you like to write?
+      description: Show the MK code you wish worked.
+      render: rust
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: What should it compile to?
+      description: The TypeScript you'd expect, roughly. This keeps proposals grounded.
+      render: typescript
+  - type: textarea
+    id: why
+    attributes:
+      label: Why is this useful?
+      description: The real problem it solves, and what you do today instead.
+    validations:
+      required: true

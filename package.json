@@ -1,0 +1,64 @@
+{
+  "name": "mk-lang",
+  "version": "0.1.0",
+  "description": "MK — a reactive, database-native language with implicit async and ownership checking that compiles to clean TypeScript",
+  "keywords": [
+    "programming-language",
+    "compiler",
+    "transpiler",
+    "typescript",
+    "reactive",
+    "signals",
+    "sql",
+    "query-builder",
+    "ownership",
+    "linear-types",
+    "async",
+    "language"
+  ],
+  "author": "maksimkrulj (https://github.com/maksimkrulj)",
+  "homepage": "https://github.com/maksimkrulj/mkcode#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maksimkrulj/mkcode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/maksimkrulj/mkcode/issues"
+  },
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "mk": "bin/mk.js"
+  },
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/src/runtime/index.d.ts",
+      "default": "./dist/src/runtime/index.js"
+    }
+  },
+  "files": [
+    "bin",
+    "dist/src"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test \"dist/test/**/*.test.js\"",
+    "mk": "node bin/mk.js",
+    "example": "npm run build && node bin/mk.js run example.mk --seed examples/users.seed.json",
+    "playground": "npm run build && node scripts/serve.mjs",
+    "prepublishOnly": "npm test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,33 @@
+name: Bug report
+description: The compiler rejected valid code, accepted invalid code, crashed, or generated wrong TypeScript.
+labels: [bug]
+body:
+  - type: textarea
+    id: source
+    attributes:
+      label: MK source
+      description: The smallest `.mk` program that shows the problem. A playground share link works too.
+      render: rust
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Paste the compiler output, the generated TypeScript (`mk build`), or the runtime error.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Versions
+      placeholder: "mk 0.1.0, Node 24.1, Windows 11"
+    validations:
+      required: true

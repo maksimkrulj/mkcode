@@ -1,0 +1,39 @@
+{
+  "name": "mk-lang",
+  "displayName": "MK Language",
+  "description": "Syntax highlighting for MK — the reactive, database-native language that compiles to TypeScript",
+  "version": "0.1.0",
+  "publisher": "maksimkrulj",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maksimkrulj/mkcode.git",
+    "directory": "editors/vscode"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "mk",
+        "aliases": ["MK", "mk"],
+        "extensions": [".mk"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "mk",
+        "scopeName": "source.mk",
+        "path": "./syntaxes/mk.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.interpolation.mk": "mk"
+        }
+      }
+    ]
+  }
+}

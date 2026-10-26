@@ -1,0 +1,9 @@
+{
+  "User": [
+    { "name": "Ana", "score": 92, "status": "active" },
+    { "name": "Marko", "score": 47, "status": "active" },
+    { "name": "Jelena", "score": 78, "status": "inactive" },
+    { "name": "Stefan", "score": 65, "status": "active" },
+    { "name": "Mila", "score": 50, "status": "active" }
+  ]
+}

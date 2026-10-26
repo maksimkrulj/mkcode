@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.mk_cache/
+out/
+*.log
+*.vsix
