@@ -156,7 +156,15 @@ function launch(args: Args, outFile: string, env: NodeJS.ProcessEnv): ChildProce
   const runtime = args.flags.get("--runtime");
   const exe = runtime === "bun" ? "bun" : runtime === "node" ? "node" : process.execPath;
   const engineArgs = exe === "bun" ? ["run"] : ["--enable-source-maps", "--disable-warning=ExperimentalWarning"];
-  return spawn(exe, [...engineArgs, outFile, ...args.rest], { stdio: "inherit", env });
+  const child = spawn(exe, [...engineArgs, outFile, ...args.rest], { stdio: "inherit", env });
+  // Stopping `mk` must stop the program too, or a server would outlive it.
+  const forward = (signal: NodeJS.Signals) => () => child.kill(signal);
+  const handlers = (["SIGINT", "SIGTERM", "SIGHUP"] as const).map((s) => [s, forward(s)] as const);
+  for (const [s, h] of handlers) process.on(s, h);
+  child.on("exit", () => {
+    for (const [s, h] of handlers) process.off(s, h);
+  });
+  return child;
 }
 
 function exitCode(child: ChildProcess): Promise<number> {

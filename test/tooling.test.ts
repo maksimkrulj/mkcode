@@ -59,8 +59,15 @@ describe("mk serve", () => {
       const page = await (await fetch(`${base}/`)).text();
       assert.match(page, /<li class="open">over http<\/li>/);
     } finally {
-      child.kill();
+      // mk forwards the signal to the program it started; wait until both are gone.
+      const exited = new Promise((resolve) => child.once("exit", resolve));
+      child.kill("SIGTERM");
+      await exited;
+      child.stdout.destroy();
+      child.stderr.destroy();
     }
+    // Nothing may keep serving after mk exits.
+    await assert.rejects(fetch(`http://localhost:${port}/todos`));
   });
 });
 
